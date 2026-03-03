@@ -3704,9 +3704,6 @@ Tab10:Toggle({
     end
 })
 
-
-Tab10:Divider()
-
 _G.SavedData = _G.SavedData or {
     FishCaught = {},
     CaughtVisual = {},
@@ -3803,3 +3800,5 @@ Tab10:Toggle({
         onToggleUB(state)
     end
 })
+
+Tab10:Divider()
