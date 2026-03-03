@@ -3704,6 +3704,12 @@ Tab10:Toggle({
     end
 })
 
+
+Tab10:Divider()
+
+-- =============================================
+-- Tambahan di atas Tab10 (atau di global scope script)
+-- =============================================
 _G.SavedData = _G.SavedData or {
     FishCaught = {},
     CaughtVisual = {},
@@ -3713,6 +3719,8 @@ _G.SavedData = _G.SavedData or {
 local function FireLocalEvent(remote, ...)
     local args = {...}
     local signal = remote.OnClientEvent
+    
+    -- Cari semua koneksi lokal yang listen ke remote ini
     for _, connection in pairs(getconnections(signal)) do
         if connection.Function then
             task.spawn(function()
@@ -3723,83 +3731,139 @@ local function FireLocalEvent(remote, ...)
 end
 
 local saveCount = 0
+
 local function HookRemote(humanName, storageKey)
     local remote = GetServerRemote(humanName)
-    if remote then
+    if not remote then
+        warn("Remote tidak ditemukan: " .. humanName)
+        return false
+    end
+    
+    -- Hanya connect sekali (hindari duplikat koneksi)
+    if not remote:FindFirstChild("HookedByNoxius") then
+        local hookTag = Instance.new("BoolValue")
+        hookTag.Name = "HookedByNoxius"
+        hookTag.Value = true
+        hookTag.Parent = remote
+        
         remote.OnClientEvent:Connect(function(...)
-          if saveCount < 7 then
-            _G.SavedData[storageKey] = {...}
-            print("Captured: " .. humanName)
-            saveCount = saveCount + 1
-          end
+            if saveCount < 7 then
+                _G.SavedData[storageKey] = {...}
+                print("📥 Data captured for: " .. humanName .. " (save #" .. saveCount + 1 .. ")")
+                saveCount = saveCount + 1
+            end
         end)
+        print("Hook sukses: " .. humanName)
         return true
     end
-    return false
+    return true  -- sudah di-hook sebelumnya
 end
 
+-- =============================================
+-- Hook replion counter biar naik natural (Rainbow/Golden/Fish)
+-- =============================================
 local rainbowCount = 0
 local goldenCount = 0
 local fishCount = 0
 
-local Event = game:GetService("ReplicatedStorage").Packages._Index["ytrev_replion@2.0.0-rc.3"].replion.Remotes.Set
+local ReplionSetRemote = game:GetService("ReplicatedStorage")
+    :WaitForChild("Packages", 5)
+    :WaitForChild("_Index", 5)
+    :WaitForChild("ytrev_replion@2.0.0-rc.3", 5)
+    :WaitForChild("replion", 5)
+    :WaitForChild("Remotes", 5)
+    :WaitForChild("Set", 5)
 
-for _, Connection in getconnections(Event.OnClientEvent) do
-    local old; old = hookfunction(Connection.Function, function(...)
-        local Args = {...}
+if ReplionSetRemote then
+    for _, conn in pairs(getconnections(ReplionSetRemote.OnClientEvent)) do
+        local oldFunc
+        oldFunc = hookfunction(conn.Function, function(...)
+            local args = {...}
+            
+            if type(args[2]) == "table" then
+                local category = args[2][1]
+                local subCategory = args[2][2]
 
-        if type(Args[2]) == "table" then
-            local category = Args[2][1]
-            local subCategory = Args[2][2]
-
-            local function RunNaturalUpdate(type)
-                task.spawn(function()
-                    for i = 1, 2 do
-                        if type == "Rainbow" then
-                            rainbowCount = rainbowCount + 1
-                            if rainbowCount > 40 then rainbowCount = 0 end
-                            old(Args[1], Args[2], rainbowCount)
-                        elseif type == "Golden" then
-                            goldenCount = goldenCount + 1
-                            if goldenCount > 10 then goldenCount = 0 end
-                            old(Args[1], Args[2], goldenCount)
-                        elseif type == "Fish" then
-                            fishCount = fishCount + 1
-                            old(Args[1], Args[2], fishCount)
+                local function RunNaturalUpdate(counterType)
+                    task.spawn(function()
+                        for i = 1, 2 do
+                            if counterType == "Rainbow" then
+                                rainbowCount = (rainbowCount + 1) % 41   -- loop 0-40
+                                oldFunc(args[1], args[2], rainbowCount)
+                            elseif counterType == "Golden" then
+                                goldenCount = (goldenCount + 1) % 11     -- loop 0-10
+                                oldFunc(args[1], args[2], goldenCount)
+                            elseif counterType == "Fish" then
+                                fishCount = fishCount + 1
+                                oldFunc(args[1], args[2], fishCount)
+                            end
+                            task.wait(0.25 + math.random(5,15)/100)  -- 0.25 ~ 0.4 detik random
                         end
-                        task.wait(0.3)
+                    end)
+                end
+
+                if category == "Modifiers" then
+                    if subCategory == "Rainbow" then
+                        RunNaturalUpdate("Rainbow")
+                        return
+                    elseif subCategory == "Golden" then
+                        RunNaturalUpdate("Golden")
+                        return
                     end
-                end)
+                elseif category == "InventoryNotifications" and subCategory == "Fish" then
+                    RunNaturalUpdate("Fish")
+                    return
+                end
             end
-
-            if category == "Modifiers" and subCategory == "Rainbow" then
-                RunNaturalUpdate("Rainbow")
-                return 
-            elseif category == "Modifiers" and subCategory == "Golden" then
-                RunNaturalUpdate("Golden")
-                return
-            elseif category == "InventoryNotifications" and subCategory == "Fish" then
-                RunNaturalUpdate("Fish")
-                return
-            end
-        end
-
-        return old(...)
-    end)
+            
+            -- fallback ke asli kalau bukan target
+            return oldFunc(...)
+        end)
+    end
+    print("Natural counter hook aktif (Rainbow/Golden/Fish +0.3s delay x2)")
+else
+    warn("Replion Set remote tidak ditemukan — natural counter hook gagal")
 end
 
-print("Natural Hook 2X Active!")
+-- =============================================
+-- Tambah toggle di Tab10 (YTTA section)
+-- =============================================
+Tab10:Divider()
 
-local ubToggle = Tab10:Toggle({
-    Title = "Fast Fishing",
+local fastFishingToggle = Tab10:Toggle({
+    Title = "Fast Fishing + Natural Counter",
+    Description = "Fast reel + simpan data visual & notif + counter naik natural",
     Default = false,
     Callback = function(state)
-        HookRemote("RE/FishCaught", "FishCaught")
-        HookRemote("RE/CaughtFishVisual", "CaughtVisual")
-        HookRemote("RE/ObtainedNewFishNotification", "FishNotif")
-        saveCount = 0
+        if state then
+            saveCount = 0
+            _G.SavedData.FishCaught    = {}
+            _G.SavedData.CaughtVisual  = {}
+            _G.SavedData.FishNotif     = {}
+            
+            HookRemote("RE/FishCaught",                "FishCaught")
+            HookRemote("RE/CaughtFishVisual",          "CaughtVisual")
+            HookRemote("RE/ObtainedNewFishNotification","FishNotif")
+            
+            print("♻️ SavedData di-reset & mulai hook ulang (max 7 capture)")
+        end
+        
+        -- Panggil fungsi UB toggle yang sudah ada
         onToggleUB(state)
+        
+        -- Optional: kasih feedback visual
+        if state then
+            WindUI:Notify({
+                Title = "Fast Fishing",
+                Content = "Aktif • Natural counter + data capture ON",
+                Duration = 4
+            })
+        else
+            WindUI:Notify({
+                Title = "Fast Fishing",
+                Content = "Dimatikan",
+                Duration = 3
+            })
+        end
     end
 })
-
-Tab10:Divider()
