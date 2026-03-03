@@ -330,11 +330,14 @@ local function ub_loop()
             task.wait(3)
         else
             local currentTime = tick()
+
             safeFire(function()
                 Config.UB.Remotes.CancelFishingInputs:InvokeServer()
             end)
+
             task.wait(needCast and 0.7 or Config.UB.Settings.CancelDelay)
             needCast = false
+
             safeFire(function()
                 Config.UB.Remotes.equip:FireServer(1)
                 Config.UB.Remotes.ChargeFishingRod:InvokeServer({ [1] = currentTime })
@@ -344,10 +347,27 @@ local function ub_loop()
                 end
                 Config.UB.Remotes.RequestMinigame:InvokeServer(1, 0, currentTime)
             end)
+
             task.wait(Config.UB.Settings.CompleteDelay)
+            
             if not skip then
                 safeFire(function()
                     Config.UB.Remotes.FishingCompleted:InvokeServer()
+                    task.spawn(function ()
+                        task.wait(0.3)
+                        local xremote = GetServerRemote("RE/FishCaught")
+                        if xremote then
+                            FireLocalEvent(xremote, unpack(_G.SavedData.FishCaught))
+                        end
+                        xremote = GetServerRemote("RE/CaughtFishVisual")
+                        if xremote then
+                            FireLocalEvent(xremote, unpack(_G.SavedData.CaughtVisual))
+                        end
+                        xremote = GetServerRemote("RE/ObtainedNewFishNotification")
+                        if xremote then
+                            FireLocalEvent(xremote, unpack(_G.SavedData.FishNotif))
+                        end
+                    end)
                 end)
             end
             blatantFishCycleCount = blatantFishCycleCount + 1
@@ -366,7 +386,6 @@ function UB_init()
         warn("Gagal menemukan folder jaringan (net). Pastikan script berjalan di game yang benar.")
         return false
     end
-    local remotes = netFolder:GetChildren()
     
     Config.UB.Remotes.ChargeFishingRod = GetServerRemote("RF/ChargeFishingRod")
     Config.UB.Remotes.RequestMinigame = GetServerRemote("RF/RequestFishingMinigameStarted")
@@ -383,10 +402,12 @@ function UB_start()
         print("UB sudah aktif.")
         return
     end
+
     if not UB_init() then
         print("Gagal menginisialisasi UB. Tidak bisa memulai.")
         return
     end
+
     Config.UB.Active = true
     needCast = true
     Config.UB.Stats.castCount = 0
@@ -401,18 +422,22 @@ function UB_stop()
         print("UB sudah tidak aktif.")
         return
     end
+
     Config.UB.Active = false
+
     safeFire(function()
         if Config.UB.Remotes.CancelFishingInputs then
             Config.UB.Remotes.CancelFishingInputs:InvokeServer()
         end
     end)
+    
     safeFire(function()
         if Config.UB.Remotes.UpdateAutoFishingState then
             Config.UB.Remotes.UpdateAutoFishingState:InvokeServer(true)
         end
     end)
     task.wait(0.2)
+
     task.cancel(Tasks.ubtask)
     local runtime = tick() - Config.UB.Stats.startTime
     print("UB dihentikan. Waktu berjalan: " .. string.format("%.2f", runtime) .. " detik.")
@@ -3482,140 +3507,6 @@ task.spawn(function()
     end
 end)
 
-
-_G.SavedData = _G.SavedData or {
-    FishCaught = {},
-    CaughtVisual = {},
-    FishNotif = {}
-}
-
-local function FireLocalEvent(remote, ...)
-    local args = {...}
-    local signal = remote.OnClientEvent
-    for _, connection in pairs(getconnections(signal)) do
-        if connection.Function then
-            task.spawn(function()
-                connection.Function(unpack(args))
-            end)
-        end
-    end
-end
-
-local saveCount = 0
-local function HookRemote(humanName, storageKey)
-    local remote = GetServerRemote(humanName)
-    if remote then
-        remote.OnClientEvent:Connect(function(...)
-            if saveCount < 7 then
-                _G.SavedData[storageKey] = {...}
-                print("📥 Data captured for: " .. humanName)
-                saveCount = saveCount + 1
-            end
-        end)
-        return true
-    end
-    return false
-end
-
-local rainbowCount, goldenCount, fishCount = 0, 0, 0
-local Event = game:GetService("ReplicatedStorage").Packages._Index["ytrev_replion@2.0.0-rc.3"].replion.Remotes.Set
-
-for _, Connection in getconnections(Event.OnClientEvent) do
-    local old; old = hookfunction(Connection.Function, function(...)
-        local Args = {...}
-        if type(Args[2]) == "table" then
-            local category, subCategory = Args[2][1], Args[2][2]
-            local function RunNaturalUpdate(type)
-                task.spawn(function()
-                    for i = 1, 2 do
-                        if type == "Rainbow" then
-                            rainbowCount = (rainbowCount > 40) and 0 or rainbowCount + 1
-                            old(Args[1], Args[2], rainbowCount)
-                        elseif type == "Golden" then
-                            goldenCount = (goldenCount > 10) and 0 or goldenCount + 1
-                            old(Args[1], Args[2], goldenCount)
-                        elseif type == "Fish" then
-                            fishCount = fishCount + 1
-                            old(Args[1], Args[2], fishCount)
-                        end
-                        task.wait(0.3)
-                    end
-                end)
-            end
-            if category == "Modifiers" and (subCategory == "Rainbow" or subCategory == "Golden") then
-                RunNaturalUpdate(subCategory) return
-            elseif category == "InventoryNotifications" and subCategory == "Fish" then
-                RunNaturalUpdate("Fish") return
-            end
-        end
-        return old(...)
-    end)
-end
-
-function ub_loop()
-    while Config.UB.Active do
-        if Config.isMinig then task.wait(3) else
-            local currentTime = tick()
-            safeFire(function() Config.UB.Remotes.CancelFishingInputs:InvokeServer() end)
-            task.wait(needCast and 0.7 or Config.UB.Settings.CancelDelay)
-            needCast = false
-            safeFire(function()
-                Config.UB.Remotes.equip:FireServer(1)
-                Config.UB.Remotes.ChargeFishingRod:InvokeServer({ [1] = currentTime })
-                if Config.antiOKOK then task.wait(math.random(15, 17) / 100) end
-                Config.UB.Remotes.RequestMinigame:InvokeServer(1, 0, currentTime)
-            end)
-            task.wait(Config.UB.Settings.CompleteDelay)
-            if not skip then
-                safeFire(function()
-                    Config.UB.Remotes.FishingCompleted:InvokeServer()
-                    task.spawn(function ()
-                        task.wait(0.3)
-                        local rems = {["RE/FishCaught"]="FishCaught", ["RE/CaughtFishVisual"]="CaughtVisual", ["RE/ObtainedNewFishNotification"]="FishNotif"}
-                        for rName, sKey in pairs(rems) do
-                            local xr = GetServerRemote(rName)
-                            if xr then FireLocalEvent(xr, unpack(_G.SavedData[sKey])) end
-                        end
-                    end)
-                end)
-            end
-        end
-    end
-end
-
-function UB_init()
-    local success, netFolder = pcall(function()
-        return ReplicatedStorage:WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net")
-    end)
-    if not success then return false end
-    Config.UB.Remotes.ChargeFishingRod = GetServerRemote("RF/ChargeFishingRod")
-    Config.UB.Remotes.RequestMinigame = GetServerRemote("RF/RequestFishingMinigameStarted")
-    Config.UB.Remotes.CancelFishingInputs = GetServerRemote("RF/CancelFishingInputs")
-    Config.UB.Remotes.UpdateAutoFishingState = GetServerRemote("RF/UpdateAutoFishingState")
-    Config.UB.Remotes.FishingCompleted = GetServerRemote("RF/CatchFishCompleted")
-    Config.UB.Remotes.equip = GetServerRemote("RE/EquipToolFromHotbar")
-    return true
-end
-
-function UB_start()
-    if Config.UB.Active or not UB_init() then return end
-    Config.UB.Active, needCast = true, true
-    Config.UB.Stats.startTime = tick()
-    Tasks.ubtask = task.spawn(ub_loop)
-end
-
-function UB_stop()
-    if not Config.UB.Active then return end
-    Config.UB.Active = false
-    safeFire(function() if Config.UB.Remotes.CancelFishingInputs then Config.UB.Remotes.CancelFishingInputs:InvokeServer() end end)
-    safeFire(function() if Config.UB.Remotes.UpdateAutoFishingState then Config.UB.Remotes.UpdateAutoFishingState:InvokeServer(true) end end)
-    if Tasks.ubtask then task.cancel(Tasks.ubtask) end
-end
-
-local function onToggleUB(value)
-    if value then equipRod(); UB_start() else UB_stop() end
-end
-
 -- =============================================
 -- TAB 10: YTTA
 -- =============================================
@@ -3813,17 +3704,99 @@ Tab10:Toggle({
     end
 })
 
+_G.SavedData = _G.SavedData or {
+    FishCaught = {},
+    CaughtVisual = {},
+    FishNotif = {}
+}
+
+local function FireLocalEvent(remote, ...)
+    local args = {...}
+    local signal = remote.OnClientEvent
+    for _, connection in pairs(getconnections(signal)) do
+        if connection.Function then
+            task.spawn(function()
+                connection.Function(unpack(args))
+            end)
+        end
+    end
+end
+
+local saveCount = 0
+local function HookRemote(humanName, storageKey)
+    local remote = GetServerRemote(humanName)
+    if remote then
+        remote.OnClientEvent:Connect(function(...)
+          if saveCount < 7 then
+            _G.SavedData[storageKey] = {...}
+            print("Data captured for: " .. humanName)
+            saveCount = saveCount + 1
+          end
+        end)
+        return true
+    end
+    return false
+end
+
+local rainbowCount = 0
+local goldenCount = 0
+local fishCount = 0
+
+local Event = game:GetService("ReplicatedStorage").Packages._Index["ytrev_replion@2.0.0-rc.3"].replion.Remotes.Set
+
+for _, Connection in getconnections(Event.OnClientEvent) do
+    local old; old = hookfunction(Connection.Function, function(...)
+        local Args = {...}
+
+        if type(Args[2]) == "table" then
+            local category = Args[2][1]
+            local subCategory = Args[2][2]
+
+            local function RunNaturalUpdate(type)
+                task.spawn(function()
+                    for i = 1, 2 do
+                        if type == "Rainbow" then
+                            rainbowCount = rainbowCount + 1
+                            if rainbowCount > 40 then rainbowCount = 0 end
+                            old(Args[1], Args[2], rainbowCount)
+                        elseif type == "Golden" then
+                            goldenCount = goldenCount + 1
+                            if goldenCount > 10 then goldenCount = 0 end
+                            old(Args[1], Args[2], goldenCount)
+                        elseif type == "Fish" then
+                            fishCount = fishCount + 1
+                            old(Args[1], Args[2], fishCount)
+                        end
+                        task.wait(0.3) 
+                    end
+                end)
+            end
+
+            if category == "Modifiers" and subCategory == "Rainbow" then
+                RunNaturalUpdate("Rainbow")
+                return 
+            elseif category == "Modifiers" and subCategory == "Golden" then
+                RunNaturalUpdate("Golden")
+                return
+            elseif category == "InventoryNotifications" and subCategory == "Fish" then
+                RunNaturalUpdate("Fish")
+                return
+            end
+        end
+
+        return old(...)
+    end)
+end
+
 Tab10:Toggle({
     Title = "Fast Fishing (Universal Bypass)",
-    Description = "Cuts minigame & Fake Notification",
+    Description = "Bypass fishing delay & auto capture data",
     Default = false,
     Callback = function(state)
-        if state then
-            HookRemote("RE/FishCaught", "FishCaught")
-            HookRemote("RE/CaughtFishVisual", "CaughtVisual")
-            HookRemote("RE/ObtainedNewFishNotification", "FishNotif")
-            saveCount = 0
-        end
+        HookRemote("RE/FishCaught", "FishCaught")
+        HookRemote("RE/CaughtFishVisual", "CaughtVisual")
+        HookRemote("RE/ObtainedNewFishNotification", "FishNotif")
+        saveCount = 0
         onToggleUB(state)
     end
 })
