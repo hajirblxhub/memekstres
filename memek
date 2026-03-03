@@ -3729,7 +3729,7 @@ local function HookRemote(humanName, storageKey)
         remote.OnClientEvent:Connect(function(...)
           if saveCount < 7 then
             _G.SavedData[storageKey] = {...}
-            print("Data captured for: " .. humanName)
+            print("Captured: " .. humanName)
             saveCount = saveCount + 1
           end
         end)
@@ -3767,7 +3767,7 @@ for _, Connection in getconnections(Event.OnClientEvent) do
                             fishCount = fishCount + 1
                             old(Args[1], Args[2], fishCount)
                         end
-                        task.wait(0.3) 
+                        task.wait(0.3)
                     end
                 end)
             end
@@ -3788,9 +3788,10 @@ for _, Connection in getconnections(Event.OnClientEvent) do
     end)
 end
 
-Tab10:Toggle({
-    Title = "Fast Fishing (Universal Bypass)",
-    Description = "Bypass fishing delay & auto capture data",
+print("Natural Hook 2X Active!")
+
+local ubToggle = Tab10:Toggle({
+    Title = "Fast Fishing",
     Default = false,
     Callback = function(state)
         HookRemote("RE/FishCaught", "FishCaught")
