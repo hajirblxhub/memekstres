@@ -4512,7 +4512,7 @@ Tab10:Divider()
 
 -- =============================================
 -- AUTO TRADE & AUTO ACCEPT TRADE FEATURES
--- Ditempatkan setelah Auto Enchant di Tab10
+-- Sudah di-fix: safety check remote nil + hook aman
 -- =============================================
 
 Tab10:Divider()
@@ -4527,16 +4527,15 @@ Tab10:Section({
 Tab10:Divider()
 
 -- =============================================
--- DEFINISI REMOTE TRADE (tambahkan di bagian Events lo kalau belum)
+-- DEFINISI REMOTE (pakai Events seperti lo minta)
 -- =============================================
--- Contoh: pakai GetServerRemote seperti remote lain
-Events.tradeFunc = GetServerRemote("RF/RequestTrade")          -- Request trade
-Events.initiateTrade = GetServerRemote("RF/InitiateTrade")     -- kalau ini yang lo maksud
+-- Pastikan GetServerRemote ada di atas script lo
+Events.tradeFunc      = GetServerRemote("RF/RequestTrade")          -- utama untuk kirim trade
+Events.initiateTrade  = GetServerRemote("RF/InitiateTrade")         -- kalau ini yang lo maksud
 
--- Safety check
-if not Events.tradeFunc then
-    warn("[Trade] Remote RF/RequestTrade tidak ditemukan!")
-end
+-- Debug print (jalanin sekali buat cek)
+print("[Trade Debug] tradeFunc:", Events.tradeFunc and "OK" or "NIL")
+print("[Trade Debug] initiateTrade:", Events.initiateTrade and "OK" or "NIL")
 
 -- =============================================
 -- TRADING CONTROLLER & STATE
@@ -4546,8 +4545,8 @@ pcall(function()
     TradingController = require(ReplicatedStorage.Controllers.TradingController)
 end)
 
--- Fallback kalau controller gak load
-TradingController.CompletedTrade = TradingController.CompletedTrade or function() end
+-- Fallback aman
+TradingController.CompletedTrade   = TradingController.CompletedTrade   or function() end
 TradingController.OnTradeCancelled = TradingController.OnTradeCancelled or function() end
 
 local TradeState = {
@@ -4562,7 +4561,7 @@ local TradeState = {
     lastResult     = nil
 }
 
--- Fungsi group item by type (Fish / Enchant Stones)
+-- Fungsi group item
 function getGroupedByType(typeName)
     local items = DataService:GetExpect({ "Inventory", "Items" })
     local grouped, values = {}, {}
@@ -4584,7 +4583,7 @@ function getGroupedByType(typeName)
     return grouped, values
 end
 
--- Paragraph status trade
+-- Paragraph status
 local tradeParagraph = Tab10:Paragraph({
     Title = "Trade Status",
     Content = "<font color='#999999'>Progress : Idle</font>",
@@ -4592,10 +4591,8 @@ local tradeParagraph = Tab10:Paragraph({
 })
 
 local function setStatus(text)
-    if not text then
-        text = "<font color='#999999'>Progress : Idle</font>"
-    end
-    tradeParagraph:SetContent(text)  -- atau SetDesc kalau library lo beda
+    text = text or "<font color='#999999'>Progress : Idle</font>"
+    tradeParagraph:SetDesc(text)  -- pakai SetDesc kalau library lo begitu
 end
 
 -- Dropdown Item
@@ -4604,11 +4601,7 @@ local itemDropdown = Tab10:Dropdown({
     Values = { "None" },
     Value = "None",
     Callback = function(value)
-        if value == "None" then
-            TradeState.selectedItem = nil
-        else
-            TradeState.selectedItem = value:match("^(.-) %|") or value
-        end
+        TradeState.selectedItem = (value ~= "None") and (value:match("^(.-) %|") or value) or nil
         setStatus(nil)
     end
 })
@@ -4624,14 +4617,13 @@ Tab10:Input({
     end
 })
 
--- Button Refresh Item
+-- Refresh Buttons
 Tab10:Button({
     Title = "Refresh Fish",
     Callback = function()
         local grouped, values = getGroupedByType("Fish")
         TradeState.currentGrouped = grouped
         itemDropdown:Refresh(values or { "None" })
-        WindUI:Notify({Title = "Refresh", Content = "Fish list updated", Duration = 2})
     end
 })
 
@@ -4641,16 +4633,13 @@ Tab10:Button({
         local grouped, values = getGroupedByType("Enchant Stones")
         TradeState.currentGrouped = grouped
         itemDropdown:Refresh(values or { "None" })
-        WindUI:Notify({Title = "Refresh", Content = "Stone list updated", Duration = 2})
     end
 })
 
--- Player List & Dropdown
+-- Player Dropdown
 local playerList = {}
 for _, plr in ipairs(Players:GetPlayers()) do
-    if plr ~= LocalPlayer then
-        table.insert(playerList, plr.Name)
-    end
+    if plr ~= LocalPlayer then table.insert(playerList, plr.Name) end
 end
 if #playerList == 0 then table.insert(playerList, "None") end
 
@@ -4669,31 +4658,30 @@ Tab10:Button({
     Callback = function()
         local names = {}
         for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= LocalPlayer then
-                table.insert(names, plr.Name)
-            end
+            if plr ~= LocalPlayer then table.insert(names, plr.Name) end
         end
         playerDropdown:Refresh(names)
-        WindUI:Notify({Title = "Refresh", Content = "Player list updated", Duration = 2})
     end
 })
 
--- Hook Text Notification (skip spam message)
-RETextNotification.OnClientEvent:Connect(function(data)
-    if not TradeState.trading then return end
-    if not data or not data.Text then return end
-    
-    local msg = data.Text
-    if msg:find("Trade completed") then
-        TradeState.awaiting = false
-        TradeState.lastResult = "completed"
-        setStatus("<font color='#00cc66'>Progress : Trade success</font>")
-    elseif msg:find("Sent trade request") then
-        setStatus("<font color='#daa520'>Progress : Waiting player...</font>")
-    end
-end)
+-- Hook Notification (skip spam, aman kalau RETextNotification nil)
+if RETextNotification then
+    RETextNotification.OnClientEvent:Connect(function(data)
+        if not TradeState.trading then return end
+        if not data or not data.Text then return end
+        
+        local msg = data.Text
+        if msg:find("Trade completed") then
+            TradeState.awaiting = false
+            TradeState.lastResult = "completed"
+            setStatus("<font color='#00cc66'>Progress : Trade success</font>")
+        elseif msg:find("Sent trade request") then
+            setStatus("<font color='#daa520'>Progress : Waiting player...</font>")
+        end
+    end)
+end
 
--- Hook Completed & Cancelled
+-- Hook Completed & Cancelled (aman)
 TradingController.CompletedTrade = function()
     if TradeState.trading then
         TradeState.awaiting = false
@@ -4708,22 +4696,22 @@ TradingController.OnTradeCancelled = function()
     end
 end
 
--- Fungsi kirim trade
+-- Fungsi send trade (dengan cek remote)
 local function sendTrade(target, uuid, itemName)
+    if not Events.tradeFunc then
+        setStatus("<font color='#ff3333'>Trade remote nil!</font>")
+        TradeState.lastResult = "declined"
+        return false
+    end
+
     while TradeState.trading do
         TradeState.awaiting = true
         TradeState.lastResult = nil
         setStatus("<font color='#3399ff'>Sending " .. (itemName or "Item") .. "...</font>")
 
-        if Events.tradeFunc then
-            pcall(function()
-                Events.tradeFunc:InvokeServer(target.UserId, uuid)
-            end)
-        else
-            setStatus("<font color='#ff3333'>Trade remote not found!</font>")
-            TradeState.lastResult = "declined"
-            return false
-        end
+        pcall(function()
+            Events.tradeFunc:InvokeServer(target.UserId, uuid)
+        end)
 
         local startTime = tick()
         while TradeState.trading and TradeState.awaiting do
@@ -4743,14 +4731,14 @@ local function sendTrade(target, uuid, itemName)
             setStatus("<font color='#999999'>Skipped " .. (itemName or "Item") .. "</font>")
             return false
         else
-            setStatus("<font color='#ffaa00'>Retrying " .. (itemName or "Item") .. "...</font>")
+            setStatus("<font color='#ffaa00'>Retrying...</font>")
             task.wait(0.5)
         end
     end
     return false
 end
 
--- Fungsi start trade loop
+-- Start Trade
 local function startTrade()
     if TradeState.trading then return end
     if not TradeState.selectedPlayer or not TradeState.selectedItem then
@@ -4760,18 +4748,18 @@ local function startTrade()
 
     TradeState.trading = true
     TradeState.successCount = 0
-    setStatus("<font color='#3399ff'>Starting trade...</font>")
+    setStatus("<font color='#3399ff'>Mulai trade...</font>")
 
     local itemData = TradeState.currentGrouped[TradeState.selectedItem]
     if not itemData then
-        setStatus("<font color='#ff3333'>Item not found</font>")
+        setStatus("<font color='#ff3333'>Item tidak ditemukan</font>")
         TradeState.trading = false
         return
     end
 
     local target = Players:FindFirstChild(TradeState.selectedPlayer)
     if not target then
-        setStatus("<font color='#ff3333'>Player offline/tidak ditemukan</font>")
+        setStatus("<font color='#ff3333'>Player tidak ditemukan</font>")
         TradeState.trading = false
         return
     end
@@ -4798,9 +4786,9 @@ local function startTrade()
         TradeState.totalToTrade
     ))
 
-    tradeParagraph:SetContent([[
+    tradeParagraph:SetDesc([[
 <font color="rgb(255,105,180)">🌌 </font>
-<font color="rgb(135,206,250)">Noxius Trading Complete!</font>
+<font color="rgb(135,206,250)">Noxius Trade Selesai!</font>
 <font color="rgb(255,105,180)"> 🌌</font>
 ]])
 end
@@ -4820,7 +4808,7 @@ Tab10:Toggle({
     end
 })
 
--- Auto Accept Trade Section
+-- Auto Accept Section
 Tab10:Section({
     Title = "Auto Accept Trade",
     Icon = "check-circle"
@@ -4831,15 +4819,10 @@ Tab10:Toggle({
     Value = _G.AutoAccept or false,
     Callback = function(value)
         _G.AutoAccept = value
-        WindUI:Notify({
-            Title = "Auto Accept",
-            Content = value and "Aktif - Auto klik Yes di prompt trade" or "Dimatikan",
-            Duration = 3
-        })
     end
 })
 
--- Loop Auto Accept (klik Yes di GUI Prompt)
+-- Loop Auto Accept (klik Yes)
 spawn(function()
     while task.wait(0.5) do
         if _G.AutoAccept then
@@ -4856,7 +4839,7 @@ spawn(function()
                             local absPos = yesButton.AbsolutePosition
                             local absSize = yesButton.AbsoluteSize
                             local clickX = absPos.X + (absSize.X / 2)
-                            local clickY = absPos.Y + (absSize.Y / 2) + 50  -- offset biar pas
+                            local clickY = absPos.Y + (absSize.Y / 2) + 50
                             
                             vr:SendMouseButtonEvent(clickX, clickY, 0, true, game, 1)
                             task.wait(0.03)
@@ -4869,8 +4852,8 @@ spawn(function()
     end
 end)
 
--- Hook RETextNotification biar skip spam message
-if getconnections then
+-- Hook notification (skip spam) - aman kalau RETextNotification nil
+if RETextNotification and getconnections then
     for _, conn in ipairs(getconnections(RETextNotification.OnClientEvent)) do
         if typeof(conn.Function) == "function" then
             local oldFn = conn.Function
