@@ -3951,3 +3951,176 @@ spawn(function()
 end)
 
 Tab10:Divider()
+
+
+-- =============================================
+-- WHATSAPP NOTIFICATION VIA FONNTE (CLEAN VERSION)
+-- Hanya pakai Fonnte, hapus semua WA Business API
+-- =============================================
+
+Tab10:Divider()
+
+Tab10:Section({
+    Title = "WhatsApp Notification (Fonnte)",
+    Icon = "message-circle",
+    TextXAlignment = "Left",
+    TextSize = 17 
+})
+
+Tab10:Divider()
+
+-- Variant list (sama seperti temen lo)
+local variantList = {
+    "Galaxy", "Corrupt", "Gemstone", "Fairy Dust", "Midnight",
+    "Color Burn", "Holographic", "Lightning", "Radioactive",
+    "Ghost", "Gold", "Frozen", "1x1x1x1", "Stone", "Sandy",
+    "Noob", "Moon Fragment", "Festive", "Albino", "Arctic Frost", 
+    "Disco", "Big", "Giant", "Sparkling", "Crystalized"
+}
+
+-- Default global (token default dari temen lo, tapi sebaiknya ganti sendiri)
+_G.FonnteToken     = _G.FonnteToken     or ""
+_G.WA_TargetPhone  = _G.WA_TargetPhone  or ""
+_G.WebhookVariants = _G.WebhookVariants or {}
+
+-- Fungsi kirim via Fonnte
+local function sendFonnteMessage(number, message, imageURL)
+    if not _G.FonnteToken or _G.FonnteToken == "" or not number or number == "" then
+        warn("[Noxius WA] Token atau nomor kosong")
+        return
+    end
+
+    local payload = {
+        target  = number,
+        message = message,
+        url     = imageURL or nil  -- Fonnte pakai 'url' untuk gambar
+    }
+
+    pcall(function()
+        httpRequest({
+            Url     = "https://api.fonnte.com/send",
+            Method  = "POST",
+            Headers = {
+                ["Content-Type"]  = "application/json",
+                ["Authorization"] = _G.FonnteToken
+            },
+            Body = HttpService:JSONEncode(payload)
+        })
+    end)
+end
+
+-- Fungsi utama kirim notif WA saat dapat ikan baru
+function sendNewFishWA(fish)
+    local info = fishDB[fish.Id]
+    if not info then return end
+
+    local rarity  = tierToRarity[info.Tier] or "Unknown"
+    local variant = (fish.Metadata and fish.Metadata.VariantId and tostring(fish.Metadata.VariantId)) or "None"
+
+    -- Filter logic (sama seperti temen lo)
+    local isCrystalized = variant == "Crystalized"
+    local forceAnnounce = _G.WebhookCrystalized and isCrystalized
+
+    if not forceAnnounce then
+        if #_G.WebhookRarities > 0 and not table.find(_G.WebhookRarities, rarity) then
+            return
+        end
+        if _G.WebhookVariants and #_G.WebhookVariants > 0 and not table.find(_G.WebhookVariants, variant) then
+            return
+        end
+    end
+
+    local weight  = (fish.Metadata and fish.Metadata.Weight and string.format("%.2f Kg", fish.Metadata.Weight)) or "N/A"
+    local iconURL = getThumbnailURL(info.Icon)
+    if not iconURL then return end
+
+    local playerName = game.Players.LocalPlayer.Name
+
+    local msg = string.format(
+        "🐟 *New Fish Caught* 🐟\n\n" ..
+        "*%s* berhasil nangkap ikan *%s*!\n\n" ..
+        "• Nama     : %s\n" ..
+        "• Rarity   : %s\n" ..
+        "• Weight   : %s\n" ..
+        "• Variant  : %s\n" ..
+        "• Sell     : $%s\n\n" ..
+        "Noxius Hub - Auto Fishing",
+        playerName, rarity, info.Name, rarity, weight, variant, tostring(info.SellPrice or 0)
+    )
+
+    sendFonnteMessage(_G.WA_TargetPhone, msg, iconURL)
+end
+
+-- UI Controls (hanya yang dibutuhkan)
+Tab10:Input({
+    Title = "Nomor Tujuan WA (628...)",
+    Placeholder = "6281234567890",
+    Value = _G.WA_TargetPhone or "",
+    Callback = function(text)
+        _G.WA_TargetPhone = text:gsub("%s+", ""):gsub("^0", "62")  -- auto fix format
+    end
+})
+
+Tab10:Input({
+    Title = "Fonnte Token",
+    Placeholder = "Masukkan token Fonnte kamu",
+    Value = _G.FonnteToken or "",
+    Callback = function(text)
+        _G.FonnteToken = text
+    end
+})
+
+Tab10:Dropdown({
+    Title = "Rarity Filter (WA)",
+    Values = rarityList,
+    Multi = true,
+    AllowNone = true,
+    Value = _G.WebhookRarities or {},
+    Callback = function(selected)
+        _G.WebhookRarities = selected
+    end
+})
+
+Tab10:Dropdown({
+    Title = "Variant Filter (WA)",
+    Values = variantList,
+    Multi = true,
+    AllowNone = true,
+    Value = _G.WebhookVariants or {},
+    Callback = function(selected)
+        _G.WebhookVariants = selected
+    end
+})
+
+Tab10:Toggle({
+    Title = "Kirim Notif WhatsApp",
+    Value = _G.DetectNewFishActive or false,
+    Callback = function(state)
+        _G.DetectNewFishActive = state
+        WindUI:Notify({
+            Title = "WA Notif",
+            Content = state and "Aktif - Notif WA menyala" or "Dimatikan",
+            Duration = 3
+        })
+    end
+})
+
+Tab10:Button({
+    Title = "Test Kirim WA",
+    Callback = function()
+        if _G.WA_TargetPhone == "" or _G.FonnteToken == "" then
+            WindUI:Notify({Title = "Error", Content = "Isi Nomor WA & Token Fonnte dulu!", Duration = 4})
+            return
+        end
+        
+        sendFonnteMessage(
+            _G.WA_TargetPhone,
+            "Test sukses dari Noxius Hub! 🔥 WA Notification aktif",
+            "https://i.imgur.com/abc123.png"  -- gambar dummy, bisa diganti link gambar lain
+        )
+        
+        WindUI:Notify({Title = "Test WA", Content = "Pesan tes terkirim ke " .. _G.WA_TargetPhone, Duration = 3})
+    end
+})
+
+Tab10:Divider()
