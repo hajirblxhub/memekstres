@@ -4972,19 +4972,4 @@ Tab10:Toggle({
     end
 })
 
--- Status label (update tiap detik)
-spawn(function()
-    while task.wait(1) do
-        if SkinAnimation.IsEnabled() then
-            local count = SkinAnimation.GetReplaceCount()
-            local skin = SkinAnimation.GetCurrentSkin() or "None"
-            WindUI:Notify({
-                Title = "Skin Status",
-                Content = "Aktif - Skin: " .. skin .. " | Replace: " .. count,
-                Duration = 2
-            })
-        end
-    end
-end)
-
 Tab10:Divider()
