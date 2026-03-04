@@ -4124,3 +4124,388 @@ Tab10:Button({
 })
 
 Tab10:Divider()
+
+-- =============================================
+-- AUTO ENCHANT & DOUBLE ENCHANT FEATURES
+-- Ditempatkan setelah WhatsApp Notification di Tab10
+-- =============================================
+
+Tab10:Divider()
+
+Tab10:Section({
+    Title = "Auto Enchant & Double Enchant",
+    Icon = "sparkles",
+    TextXAlignment = "Left",
+    TextSize = 17 
+})
+
+Tab10:Divider()
+
+-- =============================================
+-- DEFINISI REMOTE (tambahkan di bagian atas script kalau belum ada)
+-- =============================================
+-- Contoh definisi (taruh di blok Events/Remotes lo):
+-- local function GetServerRemote(name) ... end  (kalau belum ada, copy dari kode lo sebelumnya)
+
+Events.activateAltarRemote   = GetServerRemote("RE/ActivateEnchantingAltar")   -- sesuai info lo
+Events.activateAltarRemote2  = GetServerRemote("RE/ActivateEnchantingAltar2")  -- kalau ada varian kedua
+Events.equipItemRemote       = GetServerRemote("RE/EquipItem")                 -- remote equip stone
+Events.equipToolRemote       = GetServerRemote("RE/EquipToolFromHotbar")       -- remote equip tool/slot
+
+-- Safety check sekali di awal (bisa ditaruh di luar loop)
+if not Events.activateAltarRemote then
+    warn("[Enchant] Remote ActivateEnchantingAltar tidak ditemukan!")
+end
+
+-- =============================================
+-- STONE IDS & GLOBAL
+-- =============================================
+local STONE_IDS = {
+    ["Enchant Stones"]          = 10,
+    ["Evolved Enchant Stone"]   = 558
+}
+
+_G.SelectedStoneType     = _G.SelectedStoneType or "Enchant Stones"
+_G.TargetEnchantBasic    = _G.TargetEnchantBasic or "Big Hunter 1"
+_G.TargetEnchantEvolved  = _G.TargetEnchantEvolved or "Prismatic 1"
+_G.AutoEnchant           = _G.AutoEnchant or false
+
+-- =============================================
+-- ENCHANT LISTS & MAP
+-- =============================================
+local basicEnchantNames = {
+    "Big Hunter 1", "Cursed 1", "Empowered 1", "Glistening 1",
+    "Gold Digger 1", "Leprechaun 1", "Leprechaun 2",
+    "Mutation Hunter 1", "Mutation Hunter 2", "Prismatic 1",
+    "Reeler 1", "Stargazer 1", "Stormhunter 1", "XPerienced 1"
+}
+
+local evolvedEnchantNames = {
+    "Prismatic 1", "Cursed 1", "Gold Digger 1", "Empowered 1",
+    "SECRET Hunter", "Shark Hunter", "Stargazer II", "Stormhunter II",
+    "Mutation Hunter II", "Leprechaun II", "Reeler II", "Mutation Hunter III",
+    "Fairy Hunter 1"
+}
+
+local enchantIdMap = {
+    -- Basic
+    ["Big Hunter 1"] = 3, ["Cursed 1"] = 12, ["Empowered 1"] = 9,
+    ["Glistening 1"] = 1, ["Gold Digger 1"] = 4, ["Leprechaun 1"] = 5,
+    ["Leprechaun 2"] = 6, ["Mutation Hunter 1"] = 7, ["Mutation Hunter 2"] = 14,
+    ["Prismatic 1"] = 13, ["Reeler 1"] = 2, ["Stargazer 1"] = 8,
+    ["Stormhunter 1"] = 11, ["XPerienced 1"] = 10,
+    
+    -- Evolved
+    ["SECRET Hunter"] = 16, ["Shark Hunter"] = 20, ["Stargazer II"] = 17,
+    ["Stormhunter II"] = 19, ["Mutation Hunter II"] = 14, ["Leprechaun II"] = 6,
+    ["Reeler II"] = 21, ["Mutation Hunter III"] = 22, ["Fairy Hunter 1"] = 15
+}
+
+-- =============================================
+-- FUNGSI PENDUKUNG
+-- =============================================
+function gStone()
+    local it = DataService:GetExpect({ "Inventory", "Items" })
+    if not it then return 0 end
+    
+    local targetId = STONE_IDS[_G.SelectedStoneType]
+    local total = 0
+    
+    for _, v in ipairs(it) do
+        if v.Id == targetId then
+            total = total + (v.Quantity or 1)
+        end
+    end
+    return total
+end
+
+function countDisplayImageButtons()
+    local backpackGui = LocalPlayer.PlayerGui:FindFirstChild("Backpack")
+    if not backpackGui then return 0 end
+    local display = backpackGui:FindFirstChild("Display")
+    if not display then return 0 end
+    
+    local count = 0
+    for _, child in ipairs(display:GetChildren()) do
+        if child:IsA("ImageButton") then count = count + 1 end
+    end
+    return count
+end
+
+function findEnchantStones()
+    local inventory = DataService:GetExpect({ "Inventory", "Items" })
+    if not inventory then return {} end
+    
+    local targetId = STONE_IDS[_G.SelectedStoneType]
+    local stones = {}
+    
+    for _, item in pairs(inventory) do
+        if item.Id == targetId then
+            table.insert(stones, { UUID = item.UUID, Quantity = item.Quantity or 1, Id = item.Id })
+        end
+    end
+    return stones
+end
+
+function getEquippedRodName()
+    local equipped = DataService:Get("EquippedItems")
+    if not equipped then return "None" end
+    
+    local rods = DataService:GetExpect({ "Inventory", "Fishing Rods" })
+    if not rods then return "None" end
+    
+    for _, uuid in pairs(equipped) do
+        for _, rod in ipairs(rods) do
+            if rod.UUID == uuid then
+                local itemData = ItemUtility:GetItemData(rod.Id)
+                return (itemData and itemData.Data and itemData.Data.Name) or rod.ItemName or "None"
+            end
+        end
+    end
+    return "None"
+end
+
+function getCurrentRodEnchant()
+    local equipped = DataService:Get("EquippedItems")
+    if not equipped then return nil end
+    
+    local rods = DataService:GetExpect({ "Inventory", "Fishing Rods" })
+    if not rods then return nil end
+    
+    for _, uuid in pairs(equipped) do
+        for _, rod in ipairs(rods) do
+            if rod.UUID == uuid and rod.Metadata and rod.Metadata.EnchantId then
+                return rod.Metadata.EnchantId
+            end
+        end
+    end
+    return nil
+end
+
+-- =============================================
+-- STATUS MONITORING (Paragraph)
+-- =============================================
+local enchantParagraph = Tab10:Paragraph({
+    Title = "Enchant Status",
+    Content = "Rod Active = <font color='#00aaff'>None</font>\n" ..
+              "Enchant Now = <font color='#ff00ff'>None</font>\n" ..
+              "Stone Left = <font color='#ffff00'>0</font>\n" ..
+              "Stone Type = <font color='#00ff00'>" .. _G.SelectedStoneType .. "</font>"
+})
+
+spawn(function()
+    local lastRod, lastEnchant, lastStones, lastType = "", "", -1, ""
+    
+    while task.wait(4) do
+        pcall(function()
+            local stones = gStone()
+            local rod = getEquippedRodName()
+            local enchantId = getCurrentRodEnchant()
+            local enchantName = "None"
+            
+            if enchantId then
+                for name, id in pairs(enchantIdMap) do
+                    if id == enchantId then
+                        enchantName = name
+                        break
+                    end
+                end
+            end
+            
+            if rod ~= lastRod or enchantName ~= lastEnchant or stones ~= lastStones or _G.SelectedStoneType ~= lastType then
+                local desc = string.format(
+                    "Rod Active = <font color='#00aaff'>%s</font>\n" ..
+                    "Enchant Now = <font color='#ff00ff'>%s</font>\n" ..
+                    "Stone Left = <font color='#ffff00'>%d</font>\n" ..
+                    "Stone Type = <font color='#00ff00'>%s</font>",
+                    rod, enchantName, stones, _G.SelectedStoneType
+                )
+                enchantParagraph:SetDesc(desc)
+                
+                lastRod, lastEnchant, lastStones, lastType = rod, enchantName, stones, _G.SelectedStoneType
+            end
+        end)
+    end
+end)
+
+-- =============================================
+-- UI CONTROLS
+-- =============================================
+Tab10:Dropdown({
+    Title = "Enchant Stone Type",
+    Values = {"Enchant Stones", "Evolved Enchant Stone"},
+    Value = _G.SelectedStoneType,
+    Callback = function(selected)
+        _G.SelectedStoneType = selected
+        WindUI:Notify({Title = "Stone Type", Content = "Diubah ke: " .. selected, Duration = 2})
+    end
+})
+
+Tab10:Dropdown({
+    Title = "Target Enchant (Basic Stones)",
+    Values = basicEnchantNames,
+    Value = _G.TargetEnchantBasic,
+    Callback = function(selected)
+        _G.TargetEnchantBasic = selected
+        WindUI:Notify({Title = "Target Basic", Content = "Dipilih: " .. selected, Duration = 2})
+    end
+})
+
+Tab10:Dropdown({
+    Title = "Target Enchant (Evolved Stones)",
+    Values = evolvedEnchantNames,
+    Value = _G.TargetEnchantEvolved,
+    Callback = function(selected)
+        _G.TargetEnchantEvolved = selected
+        WindUI:Notify({Title = "Target Evolved", Content = "Dipilih: " .. selected, Duration = 2})
+    end
+})
+
+Tab10:Toggle({
+    Title = "Auto Enchant (Auto Apply Stone)",
+    Value = _G.AutoEnchant,
+    Callback = function(value)
+        _G.AutoEnchant = value
+        WindUI:Notify({
+            Title = "Auto Enchant",
+            Content = value and "Aktif - Mencari target enchant..." or "Dimatikan",
+            Duration = 3
+        })
+    end
+})
+
+Tab10:Button({
+    Title = "Teleport to Altar (Main)",
+    Callback = function()
+        local cf = CFrame.new(3234.83667, -1302.85486, 1398.39087, 0.464485794, -1.12043161e-07, -0.885580599, 6.74793981e-08, 1, -9.11265872e-08, 0.885580599, -1.74314394e-08, 0.464485794)
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then 
+            hrp.CFrame = cf 
+            WindUI:Notify({Title = "Teleport", Content = "Ke Altar Utama", Duration = 2})
+        end
+    end
+})
+
+Tab10:Button({
+    Title = "Teleport to Second Altar",
+    Callback = function()
+        local cf = CFrame.new(1481, 128, -592)
+        local char = LocalPlayer.Character
+        if char then 
+            char:PivotTo(cf) 
+            WindUI:Notify({Title = "Teleport", Content = "Ke Altar Kedua", Duration = 2})
+        end
+    end
+})
+
+Tab10:Button({
+    Title = "Start Double Enchant",
+    Callback = function()
+        task.spawn(function()
+            if not Events.activateAltarRemote then
+                WindUI:Notify({Title = "Error", Content = "Remote altar tidak ditemukan!", Duration = 5})
+                return
+            end
+            
+            local rodName = getEquippedRodName()
+            if rodName == "None" then
+                WindUI:Notify({Title = "Error", Content = "Tidak ada rod yang di-equip!", Duration = 4})
+                return
+            end
+            
+            local stones = findEnchantStones()
+            if #stones == 0 then
+                WindUI:Notify({Title = "Error", Content = "Tidak ada " .. _G.SelectedStoneType .. " tersedia!", Duration = 4})
+                return
+            end
+            
+            WindUI:Notify({Title = "Double Enchant", Content = "Memulai... Equip stone & activate altar", Duration = 4})
+            
+            -- Equip stone pertama
+            pcall(function()
+                Events.equipItemRemote:FireServer(stones[1].UUID, "Enchant Stones")
+            end)
+            task.wait(1.2)
+            
+            -- Equip tool (slot adjust)
+            local slot = countDisplayImageButtons() - 1
+            if slot < 1 then slot = 1 end
+            pcall(function()
+                Events.equipToolRemote:FireServer(slot)
+            end)
+            task.wait(0.8)
+            
+            -- Activate altar
+            pcall(function()
+                Events.activateAltarRemote:FireServer()
+            end)
+            
+            WindUI:Notify({Title = "Success", Content = "Double Enchant di-trigger!", Duration = 3})
+        end)
+    end
+})
+
+-- =============================================
+-- LOOP AUTO ENCHANT
+-- =============================================
+spawn(function()
+    while task.wait(1.2) do  -- delay lebih aman biar ga kena rate limit
+        if _G.AutoEnchant then
+            pcall(function()
+                if not Events.activateAltarRemote then return end
+                
+                local targetEnchant = _G.SelectedStoneType == "Evolved Enchant Stone" 
+                    and _G.TargetEnchantEvolved 
+                    or _G.TargetEnchantBasic
+                
+                local currentId = getCurrentRodEnchant()
+                local targetId = enchantIdMap[targetEnchant]
+
+                if not targetId then
+                    WindUI:Notify({Title = "Error", Content = "Target enchant invalid!", Duration = 4})
+                    _G.AutoEnchant = false
+                    return
+                end
+
+                if currentId == targetId then
+                    WindUI:Notify({
+                        Title = "Auto Enchant",
+                        Content = "Berhasil! Target tercapai: " .. targetEnchant,
+                        Duration = 8
+                    })
+                    _G.AutoEnchant = false
+                    return
+                end
+
+                local stones = findEnchantStones()
+                if #stones > 0 then
+                    local stone = stones[1]
+                    
+                    pcall(function()
+                        Events.equipItemRemote:FireServer(stone.UUID, "Enchant Stones")
+                    end)
+                    task.wait(1.2)
+
+                    local slot = countDisplayImageButtons() - 2
+                    if slot < 1 then slot = 1 end
+
+                    pcall(function()
+                        Events.equipToolRemote:FireServer(slot)
+                    end)
+                    task.wait(1.2)
+
+                    pcall(function()
+                        Events.activateAltarRemote:FireServer()
+                    end)
+                    
+                    print("[Auto Enchant] Apply " .. _G.SelectedStoneType .. " → " .. targetEnchant)
+                else
+                    WindUI:Notify({Title = "Info", Content = "Stone habis, menunggu...", Duration = 3})
+                    task.wait(5)
+                end
+            end)
+        end
+    end
+end)
+
+Tab10:Divider()
