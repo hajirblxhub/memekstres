@@ -330,14 +330,11 @@ local function ub_loop()
             task.wait(3)
         else
             local currentTime = tick()
-
             safeFire(function()
                 Config.UB.Remotes.CancelFishingInputs:InvokeServer()
             end)
-
             task.wait(needCast and 0.7 or Config.UB.Settings.CancelDelay)
             needCast = false
-
             safeFire(function()
                 Config.UB.Remotes.equip:FireServer(1)
                 Config.UB.Remotes.ChargeFishingRod:InvokeServer({ [1] = currentTime })
@@ -347,27 +344,10 @@ local function ub_loop()
                 end
                 Config.UB.Remotes.RequestMinigame:InvokeServer(1, 0, currentTime)
             end)
-
             task.wait(Config.UB.Settings.CompleteDelay)
-            
             if not skip then
                 safeFire(function()
                     Config.UB.Remotes.FishingCompleted:InvokeServer()
-                    task.spawn(function ()
-                        task.wait(0.3)
-                        local xremote = GetServerRemote("RE/FishCaught")
-                        if xremote then
-                            FireLocalEvent(xremote, unpack(_G.SavedData.FishCaught))
-                        end
-                        xremote = GetServerRemote("RE/CaughtFishVisual")
-                        if xremote then
-                            FireLocalEvent(xremote, unpack(_G.SavedData.CaughtVisual))
-                        end
-                        xremote = GetServerRemote("RE/ObtainedNewFishNotification")
-                        if xremote then
-                            FireLocalEvent(xremote, unpack(_G.SavedData.FishNotif))
-                        end
-                    end)
                 end)
             end
             blatantFishCycleCount = blatantFishCycleCount + 1
@@ -386,6 +366,7 @@ function UB_init()
         warn("Gagal menemukan folder jaringan (net). Pastikan script berjalan di game yang benar.")
         return false
     end
+    local remotes = netFolder:GetChildren()
     
     Config.UB.Remotes.ChargeFishingRod = GetServerRemote("RF/ChargeFishingRod")
     Config.UB.Remotes.RequestMinigame = GetServerRemote("RF/RequestFishingMinigameStarted")
@@ -402,12 +383,10 @@ function UB_start()
         print("UB sudah aktif.")
         return
     end
-
     if not UB_init() then
         print("Gagal menginisialisasi UB. Tidak bisa memulai.")
         return
     end
-
     Config.UB.Active = true
     needCast = true
     Config.UB.Stats.castCount = 0
@@ -422,24 +401,21 @@ function UB_stop()
         print("UB sudah tidak aktif.")
         return
     end
-
     Config.UB.Active = false
-
     safeFire(function()
         if Config.UB.Remotes.CancelFishingInputs then
             Config.UB.Remotes.CancelFishingInputs:InvokeServer()
         end
     end)
-    
     safeFire(function()
         if Config.UB.Remotes.UpdateAutoFishingState then
             Config.UB.Remotes.UpdateAutoFishingState:InvokeServer(true)
         end
     end)
     task.wait(0.2)
-
     task.cancel(Tasks.ubtask)
     local runtime = tick() - Config.UB.Stats.startTime
+    print("UB dihentikan. Waktu berjalan: " .. string.format("%.2f", runtime) .. " detik.")
 end
 
 local function onToggleUB(value)
@@ -1118,13 +1094,13 @@ G2L["ButtonRezise_2"].MouseButton1Click:Connect(function()
 end)
 
 Window:Tag({
-    Title = "PREMIUM 2.0",
+    Title = "FREE V.0.3",
     Color = Color3.fromRGB(200, 0, 255),   -- ← Ubah ke ungu cerah
     Radius = 17,
 })
 
 Window:Tag({
-    Title = "KASIH KERAS",
+    Title = "NOT SELL",
     Color = Color3.fromRGB(200, 0, 255),   -- ← Ubah ke ungu cerah (sama supaya konsisten)
     Radius = 17,
 })
@@ -1543,8 +1519,6 @@ if isMobile then
         end
     })
 end
-
-
 
 Tab3:Section({
     Title = "Sell Controls",
@@ -2163,6 +2137,7 @@ Tab5:Section({
 
 Tab5:Button({
     Title = "Manual Mining",
+    Locked = true,
     Callback = function()
         getAxeUUID()
         local args = {
@@ -2193,6 +2168,7 @@ Tab5:Button({
 
 Tab5:Toggle({
     Title = "Auto Mining Crystal",
+    Locked = true,
     Description = "Otomatis nambamng kristal",
     Default = Config.AutoMining,
     Callback = function(Value)
@@ -2220,6 +2196,7 @@ end
 
 Tab5:Toggle({
     Title = "Ancient Lochness Monster",
+    Locked = true,
     Description = "Otomatis memancing di Ancient Lochness Monster",
     Default = false,
     Callback = function(Value) 
@@ -3342,6 +3319,7 @@ end
 
 Tab8:Toggle({
     Title = "Auto Accept",
+    Locked = true,
     Default = false,
     Callback = function(Value)
         Config.AutoAcceptTrade = Value
@@ -3351,6 +3329,7 @@ Tab8:Toggle({
 
 Tab8:Toggle({
     Title = "Auto Confirm Send",
+    Locked = true,
     Default = false,
     Callback = function(Value)
         Config.AutoSendTrade = Value
@@ -3380,6 +3359,7 @@ end
 
 Tab9:Toggle({
     Title = "Save Position",
+    Locked = true,
     Description = "Simpan posisi saat ini untuk autoload",
     Default = Config.savePosition,
     Callback = function(Value)
@@ -3424,6 +3404,7 @@ end
 Tab9:Button({
     Title = "Save Config",
     Description = "Simpan semua konfigurasi saat ini",
+    Locked = true,
     Callback = function()
         if Config.savePosition then
             local rootPart = getRootPart()
@@ -3734,13 +3715,7 @@ Tab10:Toggle({
     end
 })
 
-
 Tab10:Divider()
-
--- =============================================
--- BAGIAN YANG DITAMBAHKAN SETELAH 3 TOTEM MIX
--- (Langsung ditempel di akhir Tab10 sebelum tutup tab)
--- =============================================
 
 Tab10:Divider()
 
@@ -3992,7 +3967,7 @@ Tab10:Divider()
 Tab10:Divider()
 
 Tab10:Section({
-    Title = "WhatsApp Notification (Fonnte)",
+    Title = "WhatsApp Notification (DELAYED)",
     Icon = "message-circle",
     TextXAlignment = "Left",
     TextSize = 17 
@@ -4086,6 +4061,7 @@ end
 Tab10:Input({
     Title = "Nomor Tujuan WA (628...)",
     Placeholder = "6281234567890",
+    Locked = true, 
     Value = _G.WA_TargetPhone or "",
     Callback = function(text)
         _G.WA_TargetPhone = text:gsub("%s+", ""):gsub("^0", "62")  -- auto fix format
@@ -4095,6 +4071,7 @@ Tab10:Input({
 Tab10:Input({
     Title = "Fonnte Token",
     Placeholder = "Masukkan token Fonnte kamu",
+    Locked = true, 
     Value = _G.FonnteToken or "",
     Callback = function(text)
         _G.FonnteToken = text
@@ -4104,6 +4081,7 @@ Tab10:Input({
 Tab10:Dropdown({
     Title = "Rarity Filter (WA)",
     Values = rarityList,
+    Locked = true, 
     Multi = true,
     AllowNone = true,
     Value = _G.WebhookRarities or {},
@@ -4115,6 +4093,7 @@ Tab10:Dropdown({
 Tab10:Dropdown({
     Title = "Variant Filter (WA)",
     Values = variantList,
+    Locked = true, 
     Multi = true,
     AllowNone = true,
     Value = _G.WebhookVariants or {},
@@ -4125,6 +4104,7 @@ Tab10:Dropdown({
 
 Tab10:Toggle({
     Title = "Kirim Notif WhatsApp",
+    Locked = true, 
     Value = _G.DetectNewFishActive or false,
     Callback = function(state)
         _G.DetectNewFishActive = state
@@ -4138,6 +4118,7 @@ Tab10:Toggle({
 
 Tab10:Button({
     Title = "Test Kirim WA",
+    Locked = true, 
     Callback = function()
         if _G.WA_TargetPhone == "" or _G.FonnteToken == "" then
             WindUI:Notify({Title = "Error", Content = "Isi Nomor WA & Token Fonnte dulu!", Duration = 4})
