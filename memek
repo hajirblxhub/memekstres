@@ -330,11 +330,14 @@ local function ub_loop()
             task.wait(3)
         else
             local currentTime = tick()
+
             safeFire(function()
                 Config.UB.Remotes.CancelFishingInputs:InvokeServer()
             end)
+
             task.wait(needCast and 0.7 or Config.UB.Settings.CancelDelay)
             needCast = false
+
             safeFire(function()
                 Config.UB.Remotes.equip:FireServer(1)
                 Config.UB.Remotes.ChargeFishingRod:InvokeServer({ [1] = currentTime })
@@ -344,10 +347,27 @@ local function ub_loop()
                 end
                 Config.UB.Remotes.RequestMinigame:InvokeServer(1, 0, currentTime)
             end)
+
             task.wait(Config.UB.Settings.CompleteDelay)
+            
             if not skip then
                 safeFire(function()
                     Config.UB.Remotes.FishingCompleted:InvokeServer()
+                    task.spawn(function ()
+                        task.wait(0.3)
+                        local xremote = GetServerRemote("RE/FishCaught")
+                        if xremote then
+                            FireLocalEvent(xremote, unpack(_G.SavedData.FishCaught))
+                        end
+                        xremote = GetServerRemote("RE/CaughtFishVisual")
+                        if xremote then
+                            FireLocalEvent(xremote, unpack(_G.SavedData.CaughtVisual))
+                        end
+                        xremote = GetServerRemote("RE/ObtainedNewFishNotification")
+                        if xremote then
+                            FireLocalEvent(xremote, unpack(_G.SavedData.FishNotif))
+                        end
+                    end)
                 end)
             end
             blatantFishCycleCount = blatantFishCycleCount + 1
@@ -366,7 +386,6 @@ function UB_init()
         warn("Gagal menemukan folder jaringan (net). Pastikan script berjalan di game yang benar.")
         return false
     end
-    local remotes = netFolder:GetChildren()
     
     Config.UB.Remotes.ChargeFishingRod = GetServerRemote("RF/ChargeFishingRod")
     Config.UB.Remotes.RequestMinigame = GetServerRemote("RF/RequestFishingMinigameStarted")
@@ -383,10 +402,12 @@ function UB_start()
         print("UB sudah aktif.")
         return
     end
+
     if not UB_init() then
         print("Gagal menginisialisasi UB. Tidak bisa memulai.")
         return
     end
+
     Config.UB.Active = true
     needCast = true
     Config.UB.Stats.castCount = 0
@@ -401,21 +422,24 @@ function UB_stop()
         print("UB sudah tidak aktif.")
         return
     end
+
     Config.UB.Active = false
+
     safeFire(function()
         if Config.UB.Remotes.CancelFishingInputs then
             Config.UB.Remotes.CancelFishingInputs:InvokeServer()
         end
     end)
+    
     safeFire(function()
         if Config.UB.Remotes.UpdateAutoFishingState then
             Config.UB.Remotes.UpdateAutoFishingState:InvokeServer(true)
         end
     end)
     task.wait(0.2)
+
     task.cancel(Tasks.ubtask)
     local runtime = tick() - Config.UB.Stats.startTime
-    print("UB dihentikan. Waktu berjalan: " .. string.format("%.2f", runtime) .. " detik.")
 end
 
 local function onToggleUB(value)
@@ -1094,13 +1118,13 @@ G2L["ButtonRezise_2"].MouseButton1Click:Connect(function()
 end)
 
 Window:Tag({
-    Title = "FREE V.0.3",
+    Title = "PREMIUM 3.0",
     Color = Color3.fromRGB(200, 0, 255),   -- ← Ubah ke ungu cerah
     Radius = 17,
 })
 
 Window:Tag({
-    Title = "NOT SELL",
+    Title = "KASIH KERAS",
     Color = Color3.fromRGB(200, 0, 255),   -- ← Ubah ke ungu cerah (sama supaya konsisten)
     Radius = 17,
 })
@@ -1519,6 +1543,8 @@ if isMobile then
         end
     })
 end
+
+
 
 Tab3:Section({
     Title = "Sell Controls",
@@ -2137,7 +2163,6 @@ Tab5:Section({
 
 Tab5:Button({
     Title = "Manual Mining",
-    Locked = true,
     Callback = function()
         getAxeUUID()
         local args = {
@@ -2168,7 +2193,6 @@ Tab5:Button({
 
 Tab5:Toggle({
     Title = "Auto Mining Crystal",
-    Locked = true,
     Description = "Otomatis nambamng kristal",
     Default = Config.AutoMining,
     Callback = function(Value)
@@ -2196,7 +2220,6 @@ end
 
 Tab5:Toggle({
     Title = "Ancient Lochness Monster",
-    Locked = true,
     Description = "Otomatis memancing di Ancient Lochness Monster",
     Default = false,
     Callback = function(Value) 
@@ -3319,7 +3342,6 @@ end
 
 Tab8:Toggle({
     Title = "Auto Accept",
-    Locked = true,
     Default = false,
     Callback = function(Value)
         Config.AutoAcceptTrade = Value
@@ -3329,7 +3351,6 @@ Tab8:Toggle({
 
 Tab8:Toggle({
     Title = "Auto Confirm Send",
-    Locked = true,
     Default = false,
     Callback = function(Value)
         Config.AutoSendTrade = Value
@@ -3359,7 +3380,6 @@ end
 
 Tab9:Toggle({
     Title = "Save Position",
-    Locked = true,
     Description = "Simpan posisi saat ini untuk autoload",
     Default = Config.savePosition,
     Callback = function(Value)
@@ -3404,7 +3424,6 @@ end
 Tab9:Button({
     Title = "Save Config",
     Description = "Simpan semua konfigurasi saat ini",
-    Locked = true,
     Callback = function()
         if Config.savePosition then
             local rootPart = getRootPart()
@@ -3715,7 +3734,13 @@ Tab10:Toggle({
     end
 })
 
+
 Tab10:Divider()
+
+-- =============================================
+-- BAGIAN YANG DITAMBAHKAN SETELAH 3 TOTEM MIX
+-- (Langsung ditempel di akhir Tab10 sebelum tutup tab)
+-- =============================================
 
 Tab10:Divider()
 
@@ -4640,5 +4665,326 @@ Tab10:Toggle({
         end
     end
 })
+
+Tab10:Divider()
+
+-- =============================================
+-- CUSTOM SKIN ANIMATION (Replace Fish Caught Anim)
+-- =============================================
+
+Tab10:Divider()
+
+Tab10:Section({
+    Title = "Custom Skin Animation",
+    Icon = "sparkles",
+    TextXAlignment = "Left",
+    TextSize = 17 
+})
+
+Tab10:Divider()
+
+-- Load module SkinAnimation (kode lo full)
+local SkinAnimation = (function()
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local player = Players.LocalPlayer
+    local char = player.Character or player.CharacterAdded:Wait()
+    local humanoid = char:WaitForChild("Humanoid")
+
+    local Animator = humanoid:FindFirstChildOfClass("Animator")
+    if not Animator then
+        Animator = Instance.new("Animator", humanoid)
+    end
+
+    -- SKIN DATABASE
+    local SkinDatabase = {
+        ["Eclipse"] = "rbxassetid://107940819382815",
+        ["HolyTrident"] = "rbxassetid://128167068291703",
+        ["SoulScythe"] = "rbxassetid://82259219343456",
+        ["OceanicHarpoon"] = "rbxassetid://76325124055693",
+        ["BinaryEdge"] = "rbxassetid://109653945741202",
+        ["Vanquisher"] = "rbxassetid://93884986836266",
+        ["KrampusScythe"] = "rbxassetid://134934781977605",
+        ["BanHammer"] = "rbxassetid://96285280763544",
+        ["CorruptionEdge"] = "rbxassetid://126613975718573",
+        ["PrincessParasol"] = "rbxassetid://99143072029495"
+    }
+
+    local CurrentSkin = nil
+    local AnimationPool = {}
+    local IsEnabled = false
+    local POOL_SIZE = 3
+
+    local killedTracks = {}
+    local replaceCount = 0
+    local currentPoolIndex = 1
+
+    -- Load Animation Pool
+    local function LoadAnimationPool(skinId)
+        local animId = SkinDatabase[skinId]
+        if not animId then return false end
+        
+        -- Clear old pool
+        for _, track in ipairs(AnimationPool) do
+            pcall(function()
+                track:Stop(0)
+                track:Destroy()
+            end)
+        end
+        AnimationPool = {}
+        
+        local anim = Instance.new("Animation")
+        anim.AnimationId = animId
+        anim.Name = "CUSTOM_SKIN_ANIM"
+        
+        for i = 1, POOL_SIZE do
+            local track = Animator:LoadAnimation(anim)
+            track.Priority = Enum.AnimationPriority.Action4
+            track.Looped = false
+            track.Name = "SKIN_POOL_" .. i
+            
+            task.spawn(function()
+                pcall(function()
+                    track:Play(0, 1, 0)
+                    task.wait(0.05)
+                    track:Stop(0)
+                end)
+            end)
+            
+            table.insert(AnimationPool, track)
+        end
+        
+        currentPoolIndex = 1
+        return true
+    end
+
+    local function GetNextTrack()
+        for i = 1, POOL_SIZE do
+            local track = AnimationPool[i]
+            if track and not track.IsPlaying then
+                return track
+            end
+        end
+        
+        currentPoolIndex = currentPoolIndex % POOL_SIZE + 1
+        return AnimationPool[currentPoolIndex]
+    end
+
+    local function IsFishCaughtAnimation(track)
+        if not track or not track.Animation then return false end
+        
+        local trackName = string.lower(track.Name or "")
+        local animName = string.lower(track.Animation.Name or "")
+        
+        if string.find(trackName, "fishcaught") or 
+           string.find(animName, "fishcaught") or
+           string.find(trackName, "caught") or 
+           string.find(animName, "caught") then
+            return true
+        end
+        
+        return false
+    end
+
+    local function InstantReplace(originalTrack)
+        local nextTrack = GetNextTrack()
+        if not nextTrack then return end
+        
+        replaceCount = replaceCount + 1
+        killedTracks[originalTrack] = tick()
+        
+        task.spawn(function()
+            for i = 1, 10 do
+                pcall(function()
+                    if originalTrack.IsPlaying then
+                        originalTrack:Stop(0)
+                        originalTrack:AdjustSpeed(0)
+                        originalTrack.TimePosition = 0
+                    end
+                end)
+                task.wait()
+            end
+        end)
+        
+        pcall(function()
+            if nextTrack.IsPlaying then nextTrack:Stop(0) end
+            nextTrack:Play(0, 1, 1)
+            nextTrack:AdjustSpeed(1)
+        end)
+        
+        task.delay(1, function()
+            killedTracks[originalTrack] = nil
+        end)
+    end
+
+    -- Hooks
+    humanoid.AnimationPlayed:Connect(function(track)
+        if not IsEnabled then return end
+        if IsFishCaughtAnimation(track) then
+            task.spawn(function()
+                InstantReplace(track)
+            end)
+        end
+    end)
+
+    RunService.RenderStepped:Connect(function()
+        if not IsEnabled then return end
+        
+        local tracks = humanoid:GetPlayingAnimationTracks()
+        for _, track in ipairs(tracks) do
+            if string.find(string.lower(track.Name or ""), "skin_pool") then continue end
+            
+            if killedTracks[track] then
+                if track.IsPlaying then
+                    pcall(function()
+                        track:Stop(0)
+                        track:AdjustSpeed(0)
+                    end)
+                end
+                continue
+            end
+            
+            if track.IsPlaying and IsFishCaughtAnimation(track) then
+                task.spawn(function()
+                    InstantReplace(track)
+                end)
+            end
+        end
+    end)
+
+    RunService.Heartbeat:Connect(function()
+        if not IsEnabled then return end
+        
+        local tracks = humanoid:GetPlayingAnimationTracks()
+        for _, track in ipairs(tracks) do
+            if string.find(string.lower(track.Name or ""), "skin_pool") then continue end
+            
+            if killedTracks[track] and track.IsPlaying then
+                pcall(function()
+                    track:Stop(0)
+                    track:AdjustSpeed(0)
+                end)
+            end
+        end
+    end)
+
+    RunService.Stepped:Connect(function()
+        if not IsEnabled then return end
+        
+        for track, _ in pairs(killedTracks) do
+            if track and track.IsPlaying then
+                pcall(function()
+                    track:Stop(0)
+                    track:AdjustSpeed(0)
+                end)
+            end
+        end
+    end)
+
+    player.CharacterAdded:Connect(function(newChar)
+        task.wait(1.5)
+        char = newChar
+        humanoid = char:WaitForChild("Humanoid")
+        Animator = humanoid:FindFirstChildOfClass("Animator")
+        if not Animator then Animator = Instance.new("Animator", humanoid) end
+        
+        killedTracks = {}
+        replaceCount = 0
+        
+        if IsEnabled and CurrentSkin then
+            task.wait(0.5)
+            LoadAnimationPool(CurrentSkin)
+        end
+    end)
+
+    -- Public API
+    local SkinAPI = {}
+    function SkinAPI.SwitchSkin(skinId)
+        if not SkinDatabase[skinId] then return false end
+        CurrentSkin = skinId
+        if IsEnabled then return LoadAnimationPool(skinId) end
+        return true
+    end
+
+    function SkinAPI.Enable()
+        if IsEnabled then return false end
+        if not CurrentSkin then return false end
+        local success = LoadAnimationPool(CurrentSkin)
+        if success then
+            IsEnabled = true
+            killedTracks = {}
+            replaceCount = 0
+            return true
+        end
+        return false
+    end
+
+    function SkinAPI.Disable()
+        if not IsEnabled then return false end
+        IsEnabled = false
+        killedTracks = {}
+        replaceCount = 0
+        for _, track in ipairs(AnimationPool) do
+            pcall(function() track:Stop(0) end)
+        end
+        return true
+    end
+
+    function SkinAPI.IsEnabled() return IsEnabled end
+    function SkinAPI.GetCurrentSkin() return CurrentSkin end
+    function SkinAPI.GetReplaceCount() return replaceCount end
+
+    return SkinAPI
+end)()
+
+-- UI di Tab10
+Tab10:Dropdown({
+    Title = "Pilih Custom Skin",
+    Values = {"Eclipse", "HolyTrident", "SoulScythe", "OceanicHarpoon", "BinaryEdge", "Vanquisher", "KrampusScythe", "BanHammer", "CorruptionEdge", "PrincessParasol"},
+    Value = "Eclipse",  -- default
+    Callback = function(selected)
+        local success = SkinAnimation.SwitchSkin(selected)
+        WindUI:Notify({
+            Title = "Skin Animation",
+            Content = success and "Skin diubah ke: " .. selected or "Gagal load skin!",
+            Duration = 3
+        })
+    end
+})
+
+Tab10:Toggle({
+    Title = "Enable Custom Skin Animation",
+    Value = false,
+    Callback = function(state)
+        local success
+        if state then
+            success = SkinAnimation.Enable()
+        else
+            success = SkinAnimation.Disable()
+        end
+        
+        WindUI:Notify({
+            Title = "Skin Animation",
+            Content = state and (success and "Aktif - Animasi fish caught diganti!" or "Gagal aktifkan!") 
+                     or "Dimatikan",
+            Duration = 4
+        })
+    end
+})
+
+-- Status label (update tiap detik)
+spawn(function()
+    while task.wait(1) do
+        if SkinAnimation.IsEnabled() then
+            local count = SkinAnimation.GetReplaceCount()
+            local skin = SkinAnimation.GetCurrentSkin() or "None"
+            WindUI:Notify({
+                Title = "Skin Status",
+                Content = "Aktif - Skin: " .. skin .. " | Replace: " .. count,
+                Duration = 2
+            })
+        end
+    end
+end)
 
 Tab10:Divider()
