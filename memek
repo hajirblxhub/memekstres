@@ -3810,7 +3810,7 @@ function sendTestWebhook()
         embeds = {{
             title = "Test Webhook Connected",
             description = "Webhook Noxius berhasil terhubung!",
-            color = 0x00FF00
+            color = 0xFF69B4
         }}
     }
 
@@ -3850,7 +3850,7 @@ function sendNewFishWebhook(newlyCaughtFish)
             title = "Noxius Fish caught!",
             description = string.format("Congrats! **%s** You obtained new **%s** here for full detail fish :", playerName, newFishRarity),
             url = "https://discord.gg/noxius",
-            color = 65280,
+            color = 16738740,
             fields = {
                 { name = "Name Fish :",        value = "```\n"..newFishDetails.Name.."```" },
                 { name = "Rarity :",           value = "```"..newFishRarity.."```" },
