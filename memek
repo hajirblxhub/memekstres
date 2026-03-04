@@ -4509,3 +4509,384 @@ spawn(function()
 end)
 
 Tab10:Divider()
+
+-- =============================================
+-- AUTO TRADE & AUTO ACCEPT TRADE FEATURES
+-- Ditempatkan setelah Auto Enchant di Tab10
+-- =============================================
+
+Tab10:Divider()
+
+Tab10:Section({
+    Title = "Auto Trade & Auto Accept",
+    Icon = "handshake",
+    TextXAlignment = "Left",
+    TextSize = 17 
+})
+
+Tab10:Divider()
+
+-- =============================================
+-- DEFINISI REMOTE TRADE (tambahkan di bagian Events lo kalau belum)
+-- =============================================
+-- Contoh: pakai GetServerRemote seperti remote lain
+Events.tradeFunc = GetServerRemote("RF/RequestTrade")          -- Request trade
+Events.initiateTrade = GetServerRemote("RF/InitiateTrade")     -- kalau ini yang lo maksud
+
+-- Safety check
+if not Events.tradeFunc then
+    warn("[Trade] Remote RF/RequestTrade tidak ditemukan!")
+end
+
+-- =============================================
+-- TRADING CONTROLLER & STATE
+-- =============================================
+TradingController = {}
+pcall(function()
+    TradingController = require(ReplicatedStorage.Controllers.TradingController)
+end)
+
+-- Fallback kalau controller gak load
+TradingController.CompletedTrade = TradingController.CompletedTrade or function() end
+TradingController.OnTradeCancelled = TradingController.OnTradeCancelled or function() end
+
+local TradeState = {
+    selectedPlayer = nil,
+    selectedItem   = nil,
+    tradeAmount    = 1,
+    trading        = false,
+    successCount   = 0,
+    totalToTrade   = 0,
+    awaiting       = false,
+    currentGrouped = {},
+    lastResult     = nil
+}
+
+-- Fungsi group item by type (Fish / Enchant Stones)
+function getGroupedByType(typeName)
+    local items = DataService:GetExpect({ "Inventory", "Items" })
+    local grouped, values = {}, {}
+    
+    for _, item in ipairs(items or {}) do
+        local info = ItemUtility:GetItemDataFromItemType("Items", item.Id)
+        if info and info.Data.Type == typeName then
+            local name = info.Data.Name
+            grouped[name] = grouped[name] or { count = 0, uuids = {} }
+            grouped[name].count = grouped[name].count + (item.Quantity or 1)
+            table.insert(grouped[name].uuids, item.UUID)
+        end
+    end
+    
+    for name, data in pairs(grouped) do
+        table.insert(values, ("%s | Total %dx"):format(name, data.count))
+    end
+    
+    return grouped, values
+end
+
+-- Paragraph status trade
+local tradeParagraph = Tab10:Paragraph({
+    Title = "Trade Status",
+    Content = "<font color='#999999'>Progress : Idle</font>",
+    RichText = true
+})
+
+local function setStatus(text)
+    if not text then
+        text = "<font color='#999999'>Progress : Idle</font>"
+    end
+    tradeParagraph:SetContent(text)  -- atau SetDesc kalau library lo beda
+end
+
+-- Dropdown Item
+local itemDropdown = Tab10:Dropdown({
+    Title = "Select Item",
+    Values = { "None" },
+    Value = "None",
+    Callback = function(value)
+        if value == "None" then
+            TradeState.selectedItem = nil
+        else
+            TradeState.selectedItem = value:match("^(.-) %|") or value
+        end
+        setStatus(nil)
+    end
+})
+
+-- Input Amount
+Tab10:Input({
+    Title = "Amount to Trade",
+    Placeholder = "Enter Number",
+    Value = "1",
+    Callback = function(value)
+        TradeState.tradeAmount = tonumber(value) or 1
+        setStatus(nil)
+    end
+})
+
+-- Button Refresh Item
+Tab10:Button({
+    Title = "Refresh Fish",
+    Callback = function()
+        local grouped, values = getGroupedByType("Fish")
+        TradeState.currentGrouped = grouped
+        itemDropdown:Refresh(values or { "None" })
+        WindUI:Notify({Title = "Refresh", Content = "Fish list updated", Duration = 2})
+    end
+})
+
+Tab10:Button({
+    Title = "Refresh Stone",
+    Callback = function()
+        local grouped, values = getGroupedByType("Enchant Stones")
+        TradeState.currentGrouped = grouped
+        itemDropdown:Refresh(values or { "None" })
+        WindUI:Notify({Title = "Refresh", Content = "Stone list updated", Duration = 2})
+    end
+})
+
+-- Player List & Dropdown
+local playerList = {}
+for _, plr in ipairs(Players:GetPlayers()) do
+    if plr ~= LocalPlayer then
+        table.insert(playerList, plr.Name)
+    end
+end
+if #playerList == 0 then table.insert(playerList, "None") end
+
+local playerDropdown = Tab10:Dropdown({
+    Title = "Select Player",
+    Values = playerList,
+    Value = playerList[1] or "None",
+    Callback = function(value)
+        TradeState.selectedPlayer = (value ~= "None") and value or nil
+        setStatus(nil)
+    end
+})
+
+Tab10:Button({
+    Title = "Refresh Player List",
+    Callback = function()
+        local names = {}
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer then
+                table.insert(names, plr.Name)
+            end
+        end
+        playerDropdown:Refresh(names)
+        WindUI:Notify({Title = "Refresh", Content = "Player list updated", Duration = 2})
+    end
+})
+
+-- Hook Text Notification (skip spam message)
+RETextNotification.OnClientEvent:Connect(function(data)
+    if not TradeState.trading then return end
+    if not data or not data.Text then return end
+    
+    local msg = data.Text
+    if msg:find("Trade completed") then
+        TradeState.awaiting = false
+        TradeState.lastResult = "completed"
+        setStatus("<font color='#00cc66'>Progress : Trade success</font>")
+    elseif msg:find("Sent trade request") then
+        setStatus("<font color='#daa520'>Progress : Waiting player...</font>")
+    end
+end)
+
+-- Hook Completed & Cancelled
+TradingController.CompletedTrade = function()
+    if TradeState.trading then
+        TradeState.awaiting = false
+        TradeState.lastResult = "completed"
+    end
+end
+
+TradingController.OnTradeCancelled = function()
+    if TradeState.trading then
+        TradeState.awaiting = false
+        TradeState.lastResult = "declined"
+    end
+end
+
+-- Fungsi kirim trade
+local function sendTrade(target, uuid, itemName)
+    while TradeState.trading do
+        TradeState.awaiting = true
+        TradeState.lastResult = nil
+        setStatus("<font color='#3399ff'>Sending " .. (itemName or "Item") .. "...</font>")
+
+        if Events.tradeFunc then
+            pcall(function()
+                Events.tradeFunc:InvokeServer(target.UserId, uuid)
+            end)
+        else
+            setStatus("<font color='#ff3333'>Trade remote not found!</font>")
+            TradeState.lastResult = "declined"
+            return false
+        end
+
+        local startTime = tick()
+        while TradeState.trading and TradeState.awaiting do
+            task.wait(0.1)
+            if tick() - startTime > 6 then
+                TradeState.awaiting = false
+                TradeState.lastResult = "timeout"
+                break
+            end
+        end
+
+        if TradeState.lastResult == "completed" then
+            TradeState.successCount += 1
+            setStatus("<font color='#00cc66'>Success : " .. (itemName or "Item") .. "</font>")
+            return true
+        elseif TradeState.lastResult == "declined" or TradeState.lastResult == "timeout" then
+            setStatus("<font color='#999999'>Skipped " .. (itemName or "Item") .. "</font>")
+            return false
+        else
+            setStatus("<font color='#ffaa00'>Retrying " .. (itemName or "Item") .. "...</font>")
+            task.wait(0.5)
+        end
+    end
+    return false
+end
+
+-- Fungsi start trade loop
+local function startTrade()
+    if TradeState.trading then return end
+    if not TradeState.selectedPlayer or not TradeState.selectedItem then
+        WindUI:Notify({Title = "Error", Content = "Pilih player & item dulu!", Duration = 4})
+        return
+    end
+
+    TradeState.trading = true
+    TradeState.successCount = 0
+    setStatus("<font color='#3399ff'>Starting trade...</font>")
+
+    local itemData = TradeState.currentGrouped[TradeState.selectedItem]
+    if not itemData then
+        setStatus("<font color='#ff3333'>Item not found</font>")
+        TradeState.trading = false
+        return
+    end
+
+    local target = Players:FindFirstChild(TradeState.selectedPlayer)
+    if not target then
+        setStatus("<font color='#ff3333'>Player offline/tidak ditemukan</font>")
+        TradeState.trading = false
+        return
+    end
+
+    local uuids = itemData.uuids
+    TradeState.totalToTrade = math.min(TradeState.tradeAmount, #uuids)
+
+    local i = 1
+    while TradeState.trading and TradeState.successCount < TradeState.totalToTrade do
+        local uuid = uuids[i]
+        if not uuid then break end
+
+        local ok = sendTrade(target, uuid, TradeState.selectedItem)
+
+        if ok or TradeState.lastResult == "declined" or TradeState.lastResult == "timeout" then
+            i += 1
+        end
+    end
+
+    TradeState.trading = false
+    setStatus(string.format(
+        "<font color='#66ccff'>Selesai! Sukses: %d/%d</font>",
+        TradeState.successCount,
+        TradeState.totalToTrade
+    ))
+
+    tradeParagraph:SetContent([[
+<font color="rgb(255,105,180)">🌌 </font>
+<font color="rgb(135,206,250)">Noxius Trading Complete!</font>
+<font color="rgb(255,105,180)"> 🌌</font>
+]])
+end
+
+-- Toggle Auto Trade
+Tab10:Toggle({
+    Title = "Auto Trade (Kirim Item Otomatis)",
+    Value = false,
+    Callback = function(state)
+        if state then
+            task.spawn(startTrade)
+        else
+            TradeState.trading = false
+            TradeState.awaiting = false
+            setStatus("<font color='#999999'>Progress : Idle</font>")
+        end
+    end
+})
+
+-- Auto Accept Trade Section
+Tab10:Section({
+    Title = "Auto Accept Trade",
+    Icon = "check-circle"
+})
+
+Tab10:Toggle({
+    Title = "Auto Accept Trade (Klik Yes Otomatis)",
+    Value = _G.AutoAccept or false,
+    Callback = function(value)
+        _G.AutoAccept = value
+        WindUI:Notify({
+            Title = "Auto Accept",
+            Content = value and "Aktif - Auto klik Yes di prompt trade" or "Dimatikan",
+            Duration = 3
+        })
+    end
+})
+
+-- Loop Auto Accept (klik Yes di GUI Prompt)
+spawn(function()
+    while task.wait(0.5) do
+        if _G.AutoAccept then
+            pcall(function()
+                local promptGui = LocalPlayer.PlayerGui:FindFirstChild("Prompt")
+                if promptGui and promptGui:FindFirstChild("Blackout") then
+                    local blackout = promptGui.Blackout
+                    if blackout:FindFirstChild("Options") then
+                        local options = blackout.Options
+                        local yesButton = options:FindFirstChild("Yes")
+                        
+                        if yesButton then
+                            local vr = game:GetService("VirtualInputManager")
+                            local absPos = yesButton.AbsolutePosition
+                            local absSize = yesButton.AbsoluteSize
+                            local clickX = absPos.X + (absSize.X / 2)
+                            local clickY = absPos.Y + (absSize.Y / 2) + 50  -- offset biar pas
+                            
+                            vr:SendMouseButtonEvent(clickX, clickY, 0, true, game, 1)
+                            task.wait(0.03)
+                            vr:SendMouseButtonEvent(clickX, clickY, 0, false, game, 1)
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end)
+
+-- Hook RETextNotification biar skip spam message
+if getconnections then
+    for _, conn in ipairs(getconnections(RETextNotification.OnClientEvent)) do
+        if typeof(conn.Function) == "function" then
+            local oldFn = conn.Function
+            conn:Disable()
+            RETextNotification.OnClientEvent:Connect(function(data)
+                if data and data.Text then
+                    local txt = data.Text
+                    if txt ~= "Sending trades too fast!" 
+                       and txt ~= "One or more people are already in a trade!"
+                       and txt ~= "Trade was declined" then
+                        oldFn(data)
+                    end
+                end
+            end)
+        end
+    end
+end
+
+Tab10:Divider()
