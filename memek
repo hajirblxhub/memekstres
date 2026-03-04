@@ -3806,7 +3806,7 @@ function sendTestWebhook()
 
     local payload = {
         username = "Noxius Webhook",
-        avatar_url = "https://cdn.discordapp.com/attachments/1454783748909432893/1468591782454628352/Tak_berjudul76_20260203000028.png",
+        avatar_url = "https://cdn.discordapp.com/attachments/1469729789765091332/1476918571480387644/0a8cc8ac30b6ce383d96325c2ab119a4.jpg?ex=69a9769b&is=69a8251b&hm=a3fa4a3b41fd61d01abdd2662bfd848c355bb74dcb82a1fc44fe25b7fdc16499&",
         embeds = {{
             title = "Test Webhook Connected",
             description = "Webhook Noxius berhasil terhubung!",
@@ -3849,7 +3849,7 @@ function sendNewFishWebhook(newlyCaughtFish)
         embeds = {{
             title = "Noxius Fish caught!",
             description = string.format("Congrats! **%s** You obtained new **%s** here for full detail fish :", playerName, newFishRarity),
-            url = "https://discord.gg/jdmX43t5mY",
+            url = "https://discord.gg/noxius",
             color = 65280,
             fields = {
                 { name = "Name Fish :",        value = "```\n"..newFishDetails.Name.."```" },
@@ -3862,7 +3862,7 @@ function sendNewFishWebhook(newlyCaughtFish)
             },
             footer = {
                 text = "Noxius Webhook",
-                icon_url = "https://cdn.discordapp.com/attachments/1454783748909432893/1468591782454628352/Tak_berjudul76_20260203000028.png"
+                icon_url = "https://cdn.discordapp.com/attachments/1469729789765091332/1476918571480387644/0a8cc8ac30b6ce383d96325c2ab119a4.jpg?ex=69a9769b&is=69a8251b&hm=a3fa4a3b41fd61d01abdd2662bfd848c355bb74dcb82a1fc44fe25b7fdc16499&"
             },
             timestamp = os.date("!%Y-%m-%dT%H:%M:%S.000Z"),
             thumbnail = {
@@ -3870,7 +3870,7 @@ function sendNewFishWebhook(newlyCaughtFish)
             }
         }},
         username = "Noxius Webhook",
-        avatar_url = "https://cdn.discordapp.com/attachments/1454783748909432893/1468591782454628352/Tak_berjudul76_20260203000028.png",
+        avatar_url = "https://cdn.discordapp.com/attachments/1469729789765091332/1476918571480387644/0a8cc8ac30b6ce383d96325c2ab119a4.jpg?ex=69a9769b&is=69a8251b&hm=a3fa4a3b41fd61d01abdd2662bfd848c355bb74dcb82a1fc44fe25b7fdc16499&",
         attachments = {}
     }
 
