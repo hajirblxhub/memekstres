@@ -2212,7 +2212,7 @@ Tab5:Section({
     Icon = "star",
 })
 
--- Remote Favorite pakai Events (sesuai pola Noxius)
+-- Remote Favorite pakai Events
 Events.FavoriteItem           = GetServerRemote("RE/FavoriteItem")
 Events.FavoriteStateChanged   = GetServerRemote("RE/FavoriteItemStateChanged")
 
@@ -2234,7 +2234,7 @@ if Events.FavoriteStateChanged then
     end)
 end
 
--- Tier → Rarity mapping (Fisch standard)
+-- Tier → Rarity mapping
 local tierToRarity = {
     [1] = "Uncommon",
     [2] = "Common",
@@ -2245,7 +2245,7 @@ local tierToRarity = {
     [7] = "Secret"
 }
 
--- Kumpulin nama ikan buat dropdown
+-- Kumpulin nama ikan
 local fishNames = {}
 pcall(function()
     local ItemsFolder = ReplicatedStorage:WaitForChild("Items", 5)
@@ -2267,7 +2267,6 @@ local function checkAndFavorite(item)
     if not Config.autoFavEnabled then return end
     if not item or not item.Id or not item.UUID then return end
 
-    -- Debounce biar ga spam FireServer
     if favoriteDebounce[item.UUID] and (tick() - favoriteDebounce[item.UUID] < 1.5) then
         return
     end
@@ -2308,7 +2307,7 @@ local function scanInventory()
         if not wasFav and favState[item.UUID] then
             newFavCount = newFavCount + 1
         end
-        task.wait(0.04)  -- anti rate-limit
+        task.wait(0.04)
     end
 
     if newFavCount > 0 then
@@ -2320,7 +2319,7 @@ local function scanInventory()
     end
 end
 
--- Auto scan saat inventory berubah (ikan baru masuk)
+-- Auto scan saat inventory berubah
 if PlayerData then
     PlayerData:OnChange({"Inventory", "Items"}, function()
         if Config.autoFavEnabled then
@@ -2329,10 +2328,11 @@ if PlayerData then
     end)
 end
 
--- UI Controls di Tab5 (WindUI style)
-Tab5:MultiDropdown({
+-- UI Controls (pakai Dropdown + Multi = true)
+Tab5:Dropdown({
     Title = "Favorite by Name",
     Values = #fishNames > 0 and fishNames or {"(Loading fish names...)"},
+    Multi = true,  -- <-- ini yang bikin bisa pilih banyak
     Value = Config.selectedName,
     Callback = function(selected)
         Config.selectedName = selected or {}
@@ -2342,9 +2342,10 @@ Tab5:MultiDropdown({
     end
 })
 
-Tab5:MultiDropdown({
+Tab5:Dropdown({
     Title = "Favorite by Rarity",
     Values = {"Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Secret"},
+    Multi = true,  -- <-- bisa pilih banyak rarity
     Value = Config.selectedRarity,
     Callback = function(selected)
         Config.selectedRarity = selected or {}
