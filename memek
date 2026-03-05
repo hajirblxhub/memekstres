@@ -2224,7 +2224,7 @@ Tab5:Toggle({
 })
 
 -- =============================================
--- AUTO FAVORITE / UNFAVORITE (FIX NIL VALUE + DEBUG)
+-- AUTO FAVORITE / UNFAVORITE (FULL FIX ANTI-NIL)
 -- =============================================
 
 Tab5:Divider()
@@ -2238,59 +2238,64 @@ local favsec = Tab5:Section({
 Tab5:Divider()
 
 -- =============================================
--- DEBUG: PRINT SEMUA REMOTE DI NET (JALAN SEKALI PAS LOAD)
+-- DEBUG REMOTE (PRINT SEMUA NAMA DI NET)
 -- =============================================
 task.spawn(function()
-    task.wait(3)  -- tunggu net ready
-    print("=== DEBUG REMOTE NET FOLDER ===")
+    task.wait(3)  -- tunggu net load
     local netFolder = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
     if netFolder then
-        for _, remote in ipairs(netFolder:GetChildren()) do
-            print(remote.Name)
+        print("=== LIST SEMUA REMOTE DI NET ===")
+        for _, r in ipairs(netFolder:GetChildren()) do
+            print(r.Name)
         end
+        print("=== END LIST ===")
     else
-        print("Net folder tidak ditemukan!")
+        print("Net folder ga ketemu!")
     end
-    print("================================")
 end)
 
--- Definisi remote (pakai Events)
-Events.favorite = GetServerRemote("RE/FavoriteItem")  -- <-- GANTI NAMA INI SESUAI PRINT DEBUG
+-- Remote favorite (coba beberapa nama umum, ganti sesuai print debug di atas)
+Events.favorite = GetServerRemote("RE/FavoriteItem") 
+               or GetServerRemote("RF/FavoriteItem") 
+               or GetServerRemote("RE/ToggleFavorite") 
+               or GetServerRemote("FavoriteItem") 
+               or GetServerRemote("RE/SetFavorite")
 
--- Cek remote pas load
+-- Cek remote pas load (delay 4 detik)
 task.delay(4, function()
     if not Events.favorite then
         WindUI:Notify({
-            Title = "Error Fatal",
-            Content = "Remote FavoriteItem NIL! Cek console → cari nama remote yang mirip 'Favorite' atau 'ToggleFavorite'",
-            Duration = 10
+            Title = "ERROR KRITIS",
+            Content = "Remote Favorite NIL! Buka console Roblox → cari nama remote mirip 'Favorite' atau 'Fav' di list. Kasih tau gue hasilnya!",
+            Duration = 15
         })
     else
-        print("[Fav Debug] Events.favorite OK")
+        WindUI:Notify({
+            Title = "Remote OK",
+            Content = "Events.favorite ditemukan: " .. Events.favorite.Name,
+            Duration = 3
+        })
     end
 end)
 
--- Variabel filter global
+-- Variabel filter
 local selectedRarities   = selectedRarities or {}
 local selectedItemNames  = selectedItemNames or {}
 local selectedMutations  = selectedMutations or {}
 
-local autoFavoriteState   = false
-local autoUnfavoriteState = false
-local autoFavoriteThread   = nil
-local autoUnfavoriteThread = nil
+local autoFavState   = false
+local autoUnfavState = false
+local favThread      = nil
+local unfavThread    = nil
 
 -- =============================================
--- FUNGSI HELPER (sama seperti lo, tapi lebih aman)
+-- FUNGSI HELPER (sama seperti kode lo)
 -- =============================================
 
 local function getAutoFavoriteItemOptions()
     local itemNames = {}
     local itemsContainer = ReplicatedStorage:FindFirstChild("Items")
-
-    if not itemsContainer then
-        return {"(Items folder tidak ditemukan)"}
-    end
+    if not itemsContainer then return {"Items folder ga ketemu"} end
 
     for _, item in ipairs(itemsContainer:GetChildren()) do
         local name = item.Name
@@ -2300,7 +2305,7 @@ local function getAutoFavoriteItemOptions()
     end
 
     table.sort(itemNames)
-    return #itemNames > 0 and itemNames or {"Tidak ada item valid"}
+    return #itemNames > 0 and itemNames or {"Ga ada item valid"}
 end
 
 local allItemNames = getAutoFavoriteItemOptions()
@@ -2309,15 +2314,14 @@ local function GetItemsToFavorite()
     local replion = GetPlayerDataReplion()
     if not replion then return {} end
 
-    local inventoryData = replion:GetExpect("Inventory")
-    if not inventoryData or not inventoryData.Items then return {} end
+    local inv = replion:GetExpect("Inventory")
+    if not inv or not inv.Items then return {} end
 
     local items = {}
     local hasFilter = #selectedRarities > 0 or #selectedItemNames > 0 or #selectedMutations > 0
-
     if not hasFilter then return {} end
 
-    for _, item in ipairs(inventoryData.Items) do
+    for _, item in ipairs(inv.Items) do
         if item.IsFavorite or item.Favorited then continue end
         
         local uuid = item.UUID
@@ -2333,7 +2337,6 @@ local function GetItemsToFavorite()
         
         if match then table.insert(items, uuid) end
     end
-
     return items
 end
 
@@ -2341,12 +2344,11 @@ local function GetItemsToUnfavorite()
     local replion = GetPlayerDataReplion()
     if not replion then return {} end
 
-    local inventoryData = replion:GetExpect("Inventory")
-    if not inventoryData or not inventoryData.Items then return {} end
+    local inv = replion:GetExpect("Inventory")
+    if not inv or not inv.Items then return {} end
 
     local items = {}
-
-    for _, item in ipairs(inventoryData.Items) do
+    for _, item in ipairs(inv.Items) do
         if not (item.IsFavorite or item.Favorited) then continue end
         
         local uuid = item.UUID
@@ -2362,33 +2364,45 @@ local function GetItemsToUnfavorite()
         
         if match then table.insert(items, uuid) end
     end
-
     return items
 end
 
+-- Fungsi fire remote (super aman)
 local function SetFavorite(uuid, enable)
     if not Events.favorite then
-        warn("[Fav] Remote nil! Skip favorite: " .. uuid)
-        return
+        warn("[Fav] Remote NIL - skip UUID: " .. uuid)
+        return false
     end
     
-    pcall(function()
-        Events.favorite:FireServer(uuid)  -- asumsi remote toggle (favorite/unfavorite sama)
+    local success, err = pcall(function()
+        Events.favorite:FireServer(uuid)  -- toggle favorite/unfavorite
     end)
+    
+    if not success then
+        warn("[Fav] FireServer gagal: " .. tostring(err))
+    end
+    
+    return success
 end
 
 -- Loop Favorite
-local function RunAutoFavorite()
-    if autoFavoriteThread then task.cancel(autoFavoriteThread) end
+local function RunFavLoop()
+    if favThread then task.cancel(favThread) end
     
-    autoFavoriteThread = task.spawn(function()
-        while autoFavoriteState do
+    favThread = task.spawn(function()
+        while autoFavState do
+            if not Events.favorite then
+                WindUI:Notify({Title = "Auto Fav Error", Content = "Remote NIL - matiin toggle", Duration = 5})
+                autoFavState = false
+                break
+            end
+            
             local items = GetItemsToFavorite()
             if #items > 0 then
                 WindUI:Notify({Title = "Auto Fav", Content = "Favorite " .. #items .. " item...", Duration = 2})
                 for _, uuid in ipairs(items) do
                     SetFavorite(uuid, true)
-                    task.wait(0.6)
+                    task.wait(0.7)  -- delay aman
                 end
             end
             task.wait(1.5)
@@ -2397,17 +2411,23 @@ local function RunAutoFavorite()
 end
 
 -- Loop Unfavorite
-local function RunAutoUnfavorite()
-    if autoUnfavoriteThread then task.cancel(autoUnfavoriteThread) end
+local function RunUnfavLoop()
+    if unfavThread then task.cancel(unfavThread) end
     
-    autoUnfavoriteThread = task.spawn(function()
-        while autoUnfavoriteState do
+    unfavThread = task.spawn(function()
+        while autoUnfavState do
+            if not Events.favorite then
+                WindUI:Notify({Title = "Auto Unfav Error", Content = "Remote NIL - matiin toggle", Duration = 5})
+                autoUnfavState = false
+                break
+            end
+            
             local items = GetItemsToUnfavorite()
             if #items > 0 then
                 WindUI:Notify({Title = "Auto Unfav", Content = "Unfavorite " .. #items .. " item...", Duration = 2})
                 for _, uuid in ipairs(items) do
                     SetFavorite(uuid, false)
-                    task.wait(0.6)
+                    task.wait(0.7)
                 end
             end
             task.wait(1.5)
@@ -2416,92 +2436,98 @@ local function RunAutoUnfavorite()
 end
 
 -- =============================================
--- UI
+-- UI (Dropdown + Toggle)
 -- =============================================
 
--- Dropdown Rarity
 Tab5:Dropdown({
     Title = "by Rarity",
     Values = {"Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "SECRET"},
     Multi = true,
     AllowNone = true,
-    Callback = function(vals) selectedRarities = vals or {} end
+    Callback = function(vals)
+        selectedRarities = vals or {}
+    end
 })
 
--- Dropdown Item Name
 Tab5:Dropdown({
     Title = "by Item Name",
     Values = allItemNames,
     Multi = true,
     AllowNone = true,
-    Callback = function(vals) selectedItemNames = vals or {} end
+    Callback = function(vals)
+        selectedItemNames = vals or {}
+    end
 })
 
--- Dropdown Mutation
 Tab5:Dropdown({
     Title = "by Mutation",
     Values = {"Shiny", "Gemstone", "Corrupt", "Galaxy", "Holographic", "Ghost", "Lightning", "Fairy Dust", "Gold", "Midnight", "Radioactive", "Stone", "Albino", "Sandy", "Acidic", "Disco", "Frozen", "Noob"},
     Multi = true,
     AllowNone = true,
-    Callback = function(vals) selectedMutations = vals or {} end
+    Callback = function(vals)
+        selectedMutations = vals or {}
+    end
 })
 
--- Toggle Auto Favorite
 Tab5:Toggle({
     Title = "Enable Auto Favorite",
-    Value = autoFavoriteState,
+    Value = autoFavState,
     Callback = function(state)
-        autoFavoriteState = state
+        autoFavState = state
         if state then
-            if autoUnfavoriteState then
-                autoUnfavoriteState = false
+            if autoUnfavState then
+                autoUnfavState = false
                 WindUI:Notify({Title = "Auto Unfav", Content = "Dimatikan otomatis", Duration = 3})
-                if autoUnfavoriteThread then task.cancel(autoUnfavoriteThread) end
+                if unfavThread then task.cancel(unfavThread) end
             end
             
-            if not GetPlayerDataReplion() then
-                WindUI:Notify({Title = "Error", Content = "Gagal load Replion", Duration = 5})
-                autoFavoriteState = false
+            if not Events.favorite then
+                WindUI:Notify({Title = "Error", Content = "Remote Favorite NIL! Cek console & nama remote", Duration = 10})
+                autoFavState = false
                 return
             end
             
             WindUI:Notify({Title = "Auto Fav", Content = "Aktif", Duration = 3})
-            RunAutoFavorite()
+            RunFavLoop()
         else
             WindUI:Notify({Title = "Auto Fav", Content = "OFF", Duration = 2})
-            if autoFavoriteThread then task.cancel(autoFavoriteThread) end
+            if favThread then task.cancel(favThread) end
         end
     end
 })
 
--- Toggle Auto Unfavorite
 Tab5:Toggle({
     Title = "Enable Auto Unfavorite",
-    Value = autoUnfavoriteState,
+    Value = autoUnfavState,
     Callback = function(state)
-        autoUnfavoriteState = state
+        autoUnfavState = state
         if state then
-            if autoFavoriteState then
-                autoFavoriteState = false
+            if autoFavState then
+                autoFavState = false
                 WindUI:Notify({Title = "Auto Fav", Content = "Dimatikan otomatis", Duration = 3})
-                if autoFavoriteThread then task.cancel(autoFavoriteThread) end
+                if favThread then task.cancel(favThread) end
             end
             
             if #selectedRarities == 0 and #selectedItemNames == 0 and #selectedMutations == 0 then
                 WindUI:Notify({Title = "Warning", Content = "Filter kosong, ga akan unfav apa-apa", Duration = 5})
             end
             
+            if not Events.favorite then
+                WindUI:Notify({Title = "Error", Content = "Remote Favorite NIL! Cek console & nama remote", Duration = 10})
+                autoUnfavState = false
+                return
+            end
+            
             WindUI:Notify({Title = "Auto Unfav", Content = "Aktif", Duration = 3})
-            RunAutoUnfavorite()
+            RunUnfavLoop()
         else
             WindUI:Notify({Title = "Auto Unfav", Content = "OFF", Duration = 2})
-            if autoUnfavoriteThread then task.cancel(autoUnfavoriteThread) end
+            if unfavThread then task.cancel(unfavThread) end
         end
     end
 })
 
 Tab5:Divider()
-
 
 local Tab6 = Window:Tab({
     Title = "Misc",
