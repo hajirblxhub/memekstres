@@ -2058,24 +2058,6 @@ end)
 
 Tab4:Divider()
 
-local mutationTarget = mutationTarget or {}  -- global table favorit mutation
-
-local function RemoveValue(tbl, value)
-    for i, v in ipairs(tbl) do
-        if v == value then
-            table.remove(tbl, i)
-            return
-        end
-    end
-end
-
-local function isTargetVariant(variant)
-    for _, v in ipairs(mutationTarget) do
-        if v == variant then return true end
-    end
-    return false
-end
-
 local Tab5 = Window:Tab({
     Title = "Farming",
     Icon = "rbxassetid://127294509474612",
@@ -2226,201 +2208,230 @@ Tab5:Toggle({
 Tab5:Divider()
 
 -- ==========================================================
--- TAMBAHAN FITUR AUTO FAVORITE / UNFAVORITE (TAB 5)
+-- FITUR AUTO TRADE (TAB 5)
 -- ==========================================================
 
--- 1. Inisialisasi Remote & Variabel Global
-local RE_FavoriteItem = GetServerRemote("RE/FavoriteItem")
-local selectedRarities = {}
-local selectedItemNames = {}
-local selectedMutations = {}
-local autoFavoriteState = false
-local autoUnfavoriteState = false
-local autoFavoriteThread = nil
-local autoUnfavoriteThread = nil
+local trade = Tab5:Section({ Title = "Auto Trade", TextSize = 20})
 
--- 2. Fungsi Helper untuk mendapatkan Nama & Rarity (menyesuaikan struktur game)
-local function GetFishNameAndRarity(item)
-    if not ItemUtility or not item.Id then return "Unknown", "Common" end
-    local itemData = ItemUtility.GetItemData(item.Id)
-    return itemData and itemData.Name or "Unknown", itemData and itemData.Rarity or "Common"
+-- Variabel Lokal Auto Trade
+local autoTradeState = false
+local autoTradeThread = nil
+local tradeHoldFavorite = false
+local selectedTradeTargetId = nil
+local selectedTradeItemName = nil
+local selectedTradeRarity = nil
+local tradeDelay = 1.0
+local tradeAmount = 0
+local tradeStopAtCoins = 0
+local isTradeByCoinActive = false
+
+-- Player Target Dropdown
+local PlayerList = {}
+local function GetPlayerOptions()
+    local options = {}
+    PlayerList = {} 
+    for _, player in ipairs(game.Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(options, player.Name)
+            PlayerList[player.Name] = player.UserId
+        end
+    end
+    return options
 end
 
-local function GetItemMutationString(item)
-    return item.Variant or "None"
-end
+local PlayerDropdown
+PlayerDropdown = trade:Dropdown({
+    Title = "Pilih Pemain Target",
+    Values = GetPlayerOptions(),
+    Value = false,
+    Multi = false,
+    AllowNone = false,
+    Callback = function(name)
+        local player = game.Players:FindFirstChild(name)
+        if player and player.UserId then
+            selectedTradeTargetId = player.UserId
+            WindUI:Notify({ Title = "Target Dipilih", Content = "Target set: " .. player.Name, Duration = 2, Icon = "user" })
+        else
+            selectedTradeTargetId = nil
+        end
+    end
+})
 
--- 3. Fungsi untuk mengambil semua nama item dari ReplicatedStorage
-local function getAutoFavoriteItemOptions()
+trade:Button({
+    Title = "Refresh Player List",
+    Icon = "refresh-ccw",
+    Callback = function()
+        local newOptions = GetPlayerOptions()
+        pcall(function() PlayerDropdown:Refresh(newOptions) end)
+        task.wait(0.05)
+        pcall(function() PlayerDropdown:Set(false) end)
+        selectedTradeTargetId = nil
+        WindUI:Notify({ Title = "List Diperbarui", Content = #newOptions .. " pemain ditemukan.", Duration = 2, Icon = "check" })
+    end
+})
+
+trade:Divider()
+
+-- Item Populate
+local function getTradeableItemOptions()
     local itemNames = {}
     local itemsContainer = ReplicatedStorage:FindFirstChild("Items")
-    if not itemsContainer then return {"(Error: Items Not Found)"} end
+    if not itemsContainer then return {"Error: Items Not Found"} end
 
     for _, itemObject in ipairs(itemsContainer:GetChildren()) do
         local itemName = itemObject.Name
-        if type(itemName) == "string" and #itemName >= 3 then
-            if itemName:sub(1, 3) ~= "!!!" then
-                table.insert(itemNames, itemName)
-            end
+        if type(itemName) == "string" and #itemName >= 3 and itemName:sub(1, 3) ~= "!!!" then
+            table.insert(itemNames, itemName)
         end
     end
     table.sort(itemNames)
     return #itemNames == 0 and {"Empty"} or itemNames
 end
 
-local allItemNames = getAutoFavoriteItemOptions()
+trade:Dropdown({
+    Title = "Filter Item Name",
+    Values = getTradeableItemOptions(),
+    Value = false,
+    Multi = false,
+    AllowNone = true,
+    Callback = function(name) selectedTradeItemName = name or nil end
+})
 
--- 4. Logika Filter Favorite
-local function GetItemsToFavorite()
+trade:Dropdown({
+    Title = "Filter Item Rarity",
+    Values = {"Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "SECRET", "Trophy", "Default"},
+    Value = false,
+    Multi = false,
+    AllowNone = true,
+    Callback = function(rarity) selectedTradeRarity = rarity or nil end
+})
+
+trade:Toggle({
+    Title = "Stop at Coin Amount",
+    Value = false,
+    Callback = function(state) isTradeByCoinActive = state end
+})
+
+trade:Input({
+    Title = "Target Coin Amount",
+    Placeholder = "1000000",
+    Value = "0",
+    Callback = function(val) tradeStopAtCoins = tonumber(val) or 0 end
+})
+
+trade:Input({
+    Title = "Trade Amount (0 = Unlimited)",
+    Value = "0",
+    Callback = function(input) tradeAmount = tonumber(input) or 0 end
+})
+
+trade:Slider({
+    Title = "Trade Delay (Seconds)",
+    Step = 0.1,
+    Value = { Min = 0.5, Max = 5.0, Default = 1.0 },
+    Callback = function(value) tradeDelay = tonumber(value) or 1.0 end
+})
+
+-- LOGIC FUNCTIONS
+local function GetItemsToTrade()
     local replion = GetPlayerDataReplion()
     if not replion then return {} end
     local success, inventoryData = pcall(function() return replion:GetExpect("Inventory") end)
     if not success or not inventoryData.Items then return {} end
 
-    local itemsToFavorite = {}
-    local isRarityFilterActive = #selectedRarities > 0
-    local isNameFilterActive = #selectedItemNames > 0
-    local isMutationFilterActive = #selectedMutations > 0
-
-    if not (isRarityFilterActive or isNameFilterActive or isMutationFilterActive) then return {} end
-
+    local itemsToTrade = {}
     for _, item in ipairs(inventoryData.Items) do
-        if item.IsFavorite or item.Favorited then continue end
-        local itemUUID = item.UUID
-        if typeof(itemUUID) ~= "string" or itemUUID:len() < 10 then continue end
+        if tradeHoldFavorite and (item.IsFavorite or item.Favorited) then continue end
+        if typeof(item.UUID) ~= "string" or item.UUID:len() < 10 then continue end
         
         local name, rarity = GetFishNameAndRarity(item)
-        local mutation = GetItemMutationString(item)
-        local isMatch = false
-
-        if isRarityFilterActive and table.find(selectedRarities, rarity) then isMatch = true end
-        if not isMatch and isNameFilterActive and table.find(selectedItemNames, name) then isMatch = true end
-        if not isMatch and isMutationFilterActive and table.find(selectedMutations, mutation) then isMatch = true end
-
-        if isMatch then table.insert(itemsToFavorite, itemUUID) end
+        local itemRarity = (rarity and rarity:upper() ~= "COMMON") and rarity or "Default"
+        
+        local passesRarity = not selectedTradeRarity or (selectedTradeRarity and itemRarity:upper() == selectedTradeRarity:upper())
+        local passesName = not selectedTradeItemName or (name == selectedTradeItemName)
+        
+        if passesRarity and passesName then
+            table.insert(itemsToTrade, { UUID = item.UUID, Name = name, Id = item.Id, Metadata = item.Metadata or {} })
+        end
     end
-    return itemsToFavorite
+    return itemsToTrade
 end
 
--- 5. Logika Filter Unfavorite
-local function GetItemsToUnfavorite()
-    local replion = GetPlayerDataReplion()
-    if not replion then return {} end
-    local success, inventoryData = pcall(function() return replion:GetExpect("Inventory") end)
-    if not success or not inventoryData.Items then return {} end
+local function RunAutoTradeLoop()
+    if autoTradeThread then task.cancel(autoTradeThread) end
+    autoTradeThread = task.spawn(function()
+        local tradeCount = 0
+        local accumulatedValue = 0
+        local RF_InitiateTrade = GetServerRemote("RF/InitiateTrade")
 
-    local itemsToUnfavorite = {}
-    for _, item in ipairs(inventoryData.Items) do
-        if not (item.IsFavorite or item.Favorited) then continue end
-        local name, rarity = GetFishNameAndRarity(item)
-        local mutation = GetItemMutationString(item)
+        while autoTradeState do
+            if not selectedTradeTargetId then break end
+            
+            -- Check Limits
+            if isTradeByCoinActive and tradeStopAtCoins > 0 and accumulatedValue >= tradeStopAtCoins then break end
+            if tradeAmount > 0 and tradeCount >= tradeAmount then break end
 
-        local isTargeted = (#selectedRarities > 0 and table.find(selectedRarities, rarity)) or
-                           (#selectedItemNames > 0 and table.find(selectedItemNames, name)) or
-                           (#selectedMutations > 0 and table.find(selectedMutations, mutation))
+            local items = GetItemsToTrade()
+            if #items > 0 then
+                local item = items[1]
+                
+                -- Calculate Price
+                local basePrice = 0
+                if ItemUtility then
+                    local iData = ItemUtility.GetItemData(item.Id)
+                    basePrice = iData and iData.SellPrice or 0
+                end
+                local value = math.floor(basePrice * (item.Metadata.SellMultiplier or 1))
 
-        if isTargeted then table.insert(itemsToUnfavorite, item.UUID) end
-    end
-    return itemsToUnfavorite
-end
-
--- 6. Remote Execution
-local function SetItemFavoriteState(itemUUID)
-    if not RE_FavoriteItem then return end
-    pcall(function() RE_FavoriteItem:FireServer(itemUUID) end)
-end
-
--- 7. Loop Functions
-local function RunAutoFavoriteLoop()
-    if autoFavoriteThread then task.cancel(autoFavoriteThread) end
-    autoFavoriteThread = task.spawn(function()
-        while autoFavoriteState do
-            local targets = GetItemsToFavorite()
-            if #targets > 0 then
-                WindUI:Notify({ Title = "Auto Favorite", Content = "Processing " .. #targets .. " items...", Duration = 2 })
-                for _, uuid in ipairs(targets) do
-                    if not autoFavoriteState then break end
-                    SetItemFavoriteState(uuid)
-                    task.wait(0.3)
+                -- Send Trade
+                local success = pcall(function() RF_InitiateTrade:InvokeServer(selectedTradeTargetId, item.UUID) end)
+                if success then
+                    tradeCount = tradeCount + 1
+                    accumulatedValue = accumulatedValue + value
+                    WindUI:Notify({ Title = "Trade Sent", Content = "Item: " .. item.Name .. " | Value: " .. value, Duration = 2 })
+                    task.wait(tradeDelay)
                 end
             end
-            task.wait(2)
+            task.wait(1)
         end
     end)
 end
 
-local function RunAutoUnfavoriteLoop()
-    if autoUnfavoriteThread then task.cancel(autoUnfavoriteThread) end
-    autoUnfavoriteThread = task.spawn(function()
-        while autoUnfavoriteState do
-            local targets = GetItemsToUnfavorite()
-            if #targets > 0 then
-                WindUI:Notify({ Title = "Auto Unfavorite", Content = "Unfavoriting " .. #targets .. " items...", Duration = 2 })
-                for _, uuid in ipairs(targets) do
-                    if not autoUnfavoriteState then break end
-                    SetItemFavoriteState(uuid)
-                    task.wait(0.3)
-                end
+trade:Toggle({
+    Title = "Hold Favorite Items",
+    Value = false,
+    Callback = function(state) tradeHoldFavorite = state end
+})
+
+trade:Toggle({
+    Title = "Enable Auto Trade",
+    Value = false,
+    Callback = function(state)
+        autoTradeState = state
+        if state then
+            if not selectedTradeTargetId then
+                WindUI:Notify({ Title = "Error", Content = "Pilih target dulu!", Duration = 3 })
+                return
             end
-            task.wait(2)
-        end
-    end)
-end
-
--- 8. UI Elements di Tab 5
-local favsec = Tab5:Section({ Title = "Auto Favorite / Unfavorite", TextSize = 20 })
-
-favsec:Dropdown({
-    Title = "by Rarity",
-    Values = {"Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "SECRET"},
-    Multi = true,
-    Callback = function(values) selectedRarities = values or {} end
-})
-
-favsec:Dropdown({
-    Title = "by Item Name",
-    Values = allItemNames,
-    Multi = true,
-    Callback = function(values) selectedItemNames = values or {} end
-})
-
-favsec:Dropdown({
-    Title = "by Mutation",
-    Values = {"Shiny", "Gemstone", "Corrupt", "Galaxy", "Holographic", "Ghost", "Gold", "Albino", "Frozen"},
-    Multi = true,
-    Callback = function(values) selectedMutations = values or {} end
-})
-
-favsec:Toggle({
-    Title = "Enable Auto Favorite",
-    Value = false,
-    Callback = function(state)
-        autoFavoriteState = state
-        if state then
-            autoUnfavoriteState = false
-            RunAutoFavoriteLoop()
-        elseif autoFavoriteThread then
-            task.cancel(autoFavoriteThread)
+            -- Teleport to Target
+            local target = game.Players:GetPlayerByUserId(selectedTradeTargetId)
+            if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+                LocalPlayer.Character.HumanoidRootPart.CFrame = target.Character.HumanoidRootPart.CFrame * CFrame.new(0, 5, 0)
+            end
+            RunAutoTradeLoop()
+        elseif autoTradeThread then
+            task.cancel(autoTradeThread)
         end
     end
 })
 
-favsec:Toggle({
-    Title = "Enable Auto Unfavorite",
+trade:Toggle({
+    Title = "Enable Auto Accept Trade",
     Value = false,
-    Callback = function(state)
-        autoUnfavoriteState = state
-        if state then
-            autoFavoriteState = false
-            RunAutoUnfavoriteLoop()
-        elseif autoUnfavoriteThread then
-            task.cancel(autoUnfavoriteThread)
-        end
-    end
+    Callback = function(state) _G.RockHub_AutoAcceptTradeEnabled = state end
 })
 
 Tab5:Divider()
-
 
 local Tab6 = Window:Tab({
     Title = "Misc",
