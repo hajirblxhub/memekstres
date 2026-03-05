@@ -13,56 +13,6 @@ else
     print("✓ UI loaded successfully!")
 end
 
--- LOGIKA MASTER (TARUH DI ATAS)
-local autoEventTPEnabled = false
-local selectedEvents = {}
-local createdEventPlatform = nil
-local megCheckRadius = 150
-
-local eventData = {
-    ["Worm Hunt"] = {TargetName = "Model", Locations = {Vector3.new(2190.85, -1.4, 97.575), Vector3.new(-2450.679, -1.4, 139.731)}, PlatformY = 107, Priority = 1},
-    ["Megalodon Hunt"] = {TargetName = "Megalodon Hunt", Locations = {Vector3.new(-1076.3, -1.4, 1676.2), Vector3.new(-1191.8, -1.4, 3597.3)}, PlatformY = 107, Priority = 2},
-    ["Ghost Shark Hunt"] = {TargetName = "Ghost Shark Hunt", Locations = {Vector3.new(489.559, -1.35, 25.406), Vector3.new(-1358.216, -1.35, 4100.556)}, PlatformY = 107, Priority = 3},
-    ["Shark Hunt"] = {TargetName = "Shark Hunt", Locations = {Vector3.new(1.65, -1.35, 2095.725), Vector3.new(1369.95, -1.35, 930.125)}, PlatformY = 107, Priority = 4},
-}
-
-local function destroyEventPlatform()
-    if createdEventPlatform then createdEventPlatform:Destroy() createdEventPlatform = nil end
-end
-
-local function runMultiEventTP()
-    while autoEventTPEnabled do
-        local char = game.Players.LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        
-        if hrp then
-            for name, config in pairs(eventData) do
-                local isSelected = false
-                for _, v in ipairs(selectedEvents) do if v == name then isSelected = true break end end
-                
-                if isSelected then
-                    for _, loc in ipairs(config.Locations) do
-                        for _, d in ipairs(workspace:GetDescendants()) do
-                            if d.Name == config.TargetName and (d:IsA("BasePart") or d:IsA("Model")) then
-                                local pos = d:IsA("BasePart") and d.Position or (d.PrimaryPart and d.PrimaryPart.Position)
-                                if pos and (pos - loc).Magnitude <= megCheckRadius then
-                                    destroyEventPlatform()
-                                    local p = Instance.new("Part", workspace)
-                                    p.Size, p.Position, p.Anchored, p.Transparency = Vector3.new(15,1,15), Vector3.new(pos.X, config.PlatformY, pos.Z), true, 1
-                                    createdEventPlatform = p
-                                    hrp.CFrame = p.CFrame + Vector3.new(0,3,0)
-                                    break
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        task.wait(1)
-    end
-    destroyEventPlatform()
-end
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -1596,6 +1546,303 @@ if isMobile then
 end
 
 
+tab3:Section({
+    Title = "Custom Skin Animation",
+    Icon = "sparkles",
+    TextXAlignment = "Left",
+    TextSize = 17 
+})
+
+tab3:Divider()
+
+-- Load module SkinAnimation (kode lo full)
+local SkinAnimation = (function()
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local player = Players.LocalPlayer
+    local char = player.Character or player.CharacterAdded:Wait()
+    local humanoid = char:WaitForChild("Humanoid")
+
+    local Animator = humanoid:FindFirstChildOfClass("Animator")
+    if not Animator then
+        Animator = Instance.new("Animator", humanoid)
+    end
+
+    -- SKIN DATABASE
+    local SkinDatabase = {
+        ["Eclipse"] = "rbxassetid://107940819382815",
+        ["HolyTrident"] = "rbxassetid://128167068291703",
+        ["SoulScythe"] = "rbxassetid://82259219343456",
+        ["OceanicHarpoon"] = "rbxassetid://76325124055693",
+        ["BinaryEdge"] = "rbxassetid://109653945741202",
+        ["Vanquisher"] = "rbxassetid://93884986836266",
+        ["KrampusScythe"] = "rbxassetid://134934781977605",
+        ["BanHammer"] = "rbxassetid://96285280763544",
+        ["CorruptionEdge"] = "rbxassetid://126613975718573",
+        ["PrincessParasol"] = "rbxassetid://99143072029495"
+    }
+
+    local CurrentSkin = nil
+    local AnimationPool = {}
+    local IsEnabled = false
+    local POOL_SIZE = 3
+
+    local killedTracks = {}
+    local replaceCount = 0
+    local currentPoolIndex = 1
+
+    -- Load Animation Pool
+    local function LoadAnimationPool(skinId)
+        local animId = SkinDatabase[skinId]
+        if not animId then return false end
+        
+        -- Clear old pool
+        for _, track in ipairs(AnimationPool) do
+            pcall(function()
+                track:Stop(0)
+                track:Destroy()
+            end)
+        end
+        AnimationPool = {}
+        
+        local anim = Instance.new("Animation")
+        anim.AnimationId = animId
+        anim.Name = "CUSTOM_SKIN_ANIM"
+        
+        for i = 1, POOL_SIZE do
+            local track = Animator:LoadAnimation(anim)
+            track.Priority = Enum.AnimationPriority.Action4
+            track.Looped = false
+            track.Name = "SKIN_POOL_" .. i
+            
+            task.spawn(function()
+                pcall(function()
+                    track:Play(0, 1, 0)
+                    task.wait(0.05)
+                    track:Stop(0)
+                end)
+            end)
+            
+            table.insert(AnimationPool, track)
+        end
+        
+        currentPoolIndex = 1
+        return true
+    end
+
+    local function GetNextTrack()
+        for i = 1, POOL_SIZE do
+            local track = AnimationPool[i]
+            if track and not track.IsPlaying then
+                return track
+            end
+        end
+        
+        currentPoolIndex = currentPoolIndex % POOL_SIZE + 1
+        return AnimationPool[currentPoolIndex]
+    end
+
+    local function IsFishCaughtAnimation(track)
+        if not track or not track.Animation then return false end
+        
+        local trackName = string.lower(track.Name or "")
+        local animName = string.lower(track.Animation.Name or "")
+        
+        if string.find(trackName, "fishcaught") or 
+           string.find(animName, "fishcaught") or
+           string.find(trackName, "caught") or 
+           string.find(animName, "caught") then
+            return true
+        end
+        
+        return false
+    end
+
+    local function InstantReplace(originalTrack)
+        local nextTrack = GetNextTrack()
+        if not nextTrack then return end
+        
+        replaceCount = replaceCount + 1
+        killedTracks[originalTrack] = tick()
+        
+        task.spawn(function()
+            for i = 1, 10 do
+                pcall(function()
+                    if originalTrack.IsPlaying then
+                        originalTrack:Stop(0)
+                        originalTrack:AdjustSpeed(0)
+                        originalTrack.TimePosition = 0
+                    end
+                end)
+                task.wait()
+            end
+        end)
+        
+        pcall(function()
+            if nextTrack.IsPlaying then nextTrack:Stop(0) end
+            nextTrack:Play(0, 1, 1)
+            nextTrack:AdjustSpeed(1)
+        end)
+        
+        task.delay(1, function()
+            killedTracks[originalTrack] = nil
+        end)
+    end
+
+    -- Hooks
+    humanoid.AnimationPlayed:Connect(function(track)
+        if not IsEnabled then return end
+        if IsFishCaughtAnimation(track) then
+            task.spawn(function()
+                InstantReplace(track)
+            end)
+        end
+    end)
+
+    RunService.RenderStepped:Connect(function()
+        if not IsEnabled then return end
+        
+        local tracks = humanoid:GetPlayingAnimationTracks()
+        for _, track in ipairs(tracks) do
+            if string.find(string.lower(track.Name or ""), "skin_pool") then continue end
+            
+            if killedTracks[track] then
+                if track.IsPlaying then
+                    pcall(function()
+                        track:Stop(0)
+                        track:AdjustSpeed(0)
+                    end)
+                end
+                continue
+            end
+            
+            if track.IsPlaying and IsFishCaughtAnimation(track) then
+                task.spawn(function()
+                    InstantReplace(track)
+                end)
+            end
+        end
+    end)
+
+    RunService.Heartbeat:Connect(function()
+        if not IsEnabled then return end
+        
+        local tracks = humanoid:GetPlayingAnimationTracks()
+        for _, track in ipairs(tracks) do
+            if string.find(string.lower(track.Name or ""), "skin_pool") then continue end
+            
+            if killedTracks[track] and track.IsPlaying then
+                pcall(function()
+                    track:Stop(0)
+                    track:AdjustSpeed(0)
+                end)
+            end
+        end
+    end)
+
+    RunService.Stepped:Connect(function()
+        if not IsEnabled then return end
+        
+        for track, _ in pairs(killedTracks) do
+            if track and track.IsPlaying then
+                pcall(function()
+                    track:Stop(0)
+                    track:AdjustSpeed(0)
+                end)
+            end
+        end
+    end)
+
+    player.CharacterAdded:Connect(function(newChar)
+        task.wait(1.5)
+        char = newChar
+        humanoid = char:WaitForChild("Humanoid")
+        Animator = humanoid:FindFirstChildOfClass("Animator")
+        if not Animator then Animator = Instance.new("Animator", humanoid) end
+        
+        killedTracks = {}
+        replaceCount = 0
+        
+        if IsEnabled and CurrentSkin then
+            task.wait(0.5)
+            LoadAnimationPool(CurrentSkin)
+        end
+    end)
+
+    -- Public API
+    local SkinAPI = {}
+    function SkinAPI.SwitchSkin(skinId)
+        if not SkinDatabase[skinId] then return false end
+        CurrentSkin = skinId
+        if IsEnabled then return LoadAnimationPool(skinId) end
+        return true
+    end
+
+    function SkinAPI.Enable()
+        if IsEnabled then return false end
+        if not CurrentSkin then return false end
+        local success = LoadAnimationPool(CurrentSkin)
+        if success then
+            IsEnabled = true
+            killedTracks = {}
+            replaceCount = 0
+            return true
+        end
+        return false
+    end
+
+    function SkinAPI.Disable()
+        if not IsEnabled then return false end
+        IsEnabled = false
+        killedTracks = {}
+        replaceCount = 0
+        for _, track in ipairs(AnimationPool) do
+            pcall(function() track:Stop(0) end)
+        end
+        return true
+    end
+
+    function SkinAPI.IsEnabled() return IsEnabled end
+    function SkinAPI.GetCurrentSkin() return CurrentSkin end
+    function SkinAPI.GetReplaceCount() return replaceCount end
+
+    return SkinAPI
+end)()
+
+-- UI di tab3
+tab3:Dropdown({
+    Title = "Pilih Custom Skin",
+    Values = {"Eclipse", "HolyTrident", "SoulScythe", "OceanicHarpoon", "BinaryEdge", "Vanquisher", "KrampusScythe", "BanHammer", "CorruptionEdge", "PrincessParasol"},
+    Value = "Eclipse",  -- default
+    Callback = function(selected)
+        local success = SkinAnimation.SwitchSkin(selected)
+        WindUI:Notify({
+            Title = "Skin Animation",
+            Content = success and "Skin diubah ke: " .. selected or "Gagal load skin!",
+            Duration = 3
+        })
+    end
+})
+
+tab3:Toggle({
+    Title = "Enable Custom Skin Animation",
+    Value = false,
+    Callback = function(state)
+        local success
+        if state then
+            success = SkinAnimation.Enable()
+        else
+            success = SkinAnimation.Disable()
+        end
+        
+        WindUI:Notify({
+            Title = "Skin Animation",
+            Content = state and (success and "Aktif - Animasi fish caught diganti!" or "Gagal aktifkan!") 
+                     or "Dimatikan",
+            Duration = 4
+        })
+    end
+})
 
 -- =============================================
 -- AUTO SELL FISH (VERSI DINAMIS + DISPLAY COUNT)
@@ -2446,34 +2693,6 @@ Tab5:Button({
             Content = "Selesai unfavorite " .. count .. " item",
             Duration = 3
         })
-    end
-})
-
--- TARUH DI TAB 5 SETELAH AUTO FAVORITE
-Tab5:Section({
-    Title = "Event Teleporter",
-    Icon = "calendar",
-})
-
-Tab5:Dropdown({
-    Title = "Select Events",
-    Values = {"Worm Hunt", "Megalodon Hunt", "Ghost Shark Hunt", "Shark Hunt"},
-    Multi = true,
-    Callback = function(v)
-        selectedEvents = v
-    end
-})
-
-Tab5:Toggle({
-    Title = "Auto Event",
-    Value = false,
-    Callback = function(state)
-        autoEventTPEnabled = state
-        if state then 
-            task.spawn(runMultiEventTP) 
-        else 
-            destroyEventPlatform() 
-        end
     end
 })
 
@@ -4826,302 +5045,3 @@ Tab10:Divider()
 
 Tab10:Divider()
 
-Tab10:Section({
-    Title = "Custom Skin Animation",
-    Icon = "sparkles",
-    TextXAlignment = "Left",
-    TextSize = 17 
-})
-
-Tab10:Divider()
-
--- Load module SkinAnimation (kode lo full)
-local SkinAnimation = (function()
-    local Players = game:GetService("Players")
-    local RunService = game:GetService("RunService")
-    local player = Players.LocalPlayer
-    local char = player.Character or player.CharacterAdded:Wait()
-    local humanoid = char:WaitForChild("Humanoid")
-
-    local Animator = humanoid:FindFirstChildOfClass("Animator")
-    if not Animator then
-        Animator = Instance.new("Animator", humanoid)
-    end
-
-    -- SKIN DATABASE
-    local SkinDatabase = {
-        ["Eclipse"] = "rbxassetid://107940819382815",
-        ["HolyTrident"] = "rbxassetid://128167068291703",
-        ["SoulScythe"] = "rbxassetid://82259219343456",
-        ["OceanicHarpoon"] = "rbxassetid://76325124055693",
-        ["BinaryEdge"] = "rbxassetid://109653945741202",
-        ["Vanquisher"] = "rbxassetid://93884986836266",
-        ["KrampusScythe"] = "rbxassetid://134934781977605",
-        ["BanHammer"] = "rbxassetid://96285280763544",
-        ["CorruptionEdge"] = "rbxassetid://126613975718573",
-        ["PrincessParasol"] = "rbxassetid://99143072029495"
-    }
-
-    local CurrentSkin = nil
-    local AnimationPool = {}
-    local IsEnabled = false
-    local POOL_SIZE = 3
-
-    local killedTracks = {}
-    local replaceCount = 0
-    local currentPoolIndex = 1
-
-    -- Load Animation Pool
-    local function LoadAnimationPool(skinId)
-        local animId = SkinDatabase[skinId]
-        if not animId then return false end
-        
-        -- Clear old pool
-        for _, track in ipairs(AnimationPool) do
-            pcall(function()
-                track:Stop(0)
-                track:Destroy()
-            end)
-        end
-        AnimationPool = {}
-        
-        local anim = Instance.new("Animation")
-        anim.AnimationId = animId
-        anim.Name = "CUSTOM_SKIN_ANIM"
-        
-        for i = 1, POOL_SIZE do
-            local track = Animator:LoadAnimation(anim)
-            track.Priority = Enum.AnimationPriority.Action4
-            track.Looped = false
-            track.Name = "SKIN_POOL_" .. i
-            
-            task.spawn(function()
-                pcall(function()
-                    track:Play(0, 1, 0)
-                    task.wait(0.05)
-                    track:Stop(0)
-                end)
-            end)
-            
-            table.insert(AnimationPool, track)
-        end
-        
-        currentPoolIndex = 1
-        return true
-    end
-
-    local function GetNextTrack()
-        for i = 1, POOL_SIZE do
-            local track = AnimationPool[i]
-            if track and not track.IsPlaying then
-                return track
-            end
-        end
-        
-        currentPoolIndex = currentPoolIndex % POOL_SIZE + 1
-        return AnimationPool[currentPoolIndex]
-    end
-
-    local function IsFishCaughtAnimation(track)
-        if not track or not track.Animation then return false end
-        
-        local trackName = string.lower(track.Name or "")
-        local animName = string.lower(track.Animation.Name or "")
-        
-        if string.find(trackName, "fishcaught") or 
-           string.find(animName, "fishcaught") or
-           string.find(trackName, "caught") or 
-           string.find(animName, "caught") then
-            return true
-        end
-        
-        return false
-    end
-
-    local function InstantReplace(originalTrack)
-        local nextTrack = GetNextTrack()
-        if not nextTrack then return end
-        
-        replaceCount = replaceCount + 1
-        killedTracks[originalTrack] = tick()
-        
-        task.spawn(function()
-            for i = 1, 10 do
-                pcall(function()
-                    if originalTrack.IsPlaying then
-                        originalTrack:Stop(0)
-                        originalTrack:AdjustSpeed(0)
-                        originalTrack.TimePosition = 0
-                    end
-                end)
-                task.wait()
-            end
-        end)
-        
-        pcall(function()
-            if nextTrack.IsPlaying then nextTrack:Stop(0) end
-            nextTrack:Play(0, 1, 1)
-            nextTrack:AdjustSpeed(1)
-        end)
-        
-        task.delay(1, function()
-            killedTracks[originalTrack] = nil
-        end)
-    end
-
-    -- Hooks
-    humanoid.AnimationPlayed:Connect(function(track)
-        if not IsEnabled then return end
-        if IsFishCaughtAnimation(track) then
-            task.spawn(function()
-                InstantReplace(track)
-            end)
-        end
-    end)
-
-    RunService.RenderStepped:Connect(function()
-        if not IsEnabled then return end
-        
-        local tracks = humanoid:GetPlayingAnimationTracks()
-        for _, track in ipairs(tracks) do
-            if string.find(string.lower(track.Name or ""), "skin_pool") then continue end
-            
-            if killedTracks[track] then
-                if track.IsPlaying then
-                    pcall(function()
-                        track:Stop(0)
-                        track:AdjustSpeed(0)
-                    end)
-                end
-                continue
-            end
-            
-            if track.IsPlaying and IsFishCaughtAnimation(track) then
-                task.spawn(function()
-                    InstantReplace(track)
-                end)
-            end
-        end
-    end)
-
-    RunService.Heartbeat:Connect(function()
-        if not IsEnabled then return end
-        
-        local tracks = humanoid:GetPlayingAnimationTracks()
-        for _, track in ipairs(tracks) do
-            if string.find(string.lower(track.Name or ""), "skin_pool") then continue end
-            
-            if killedTracks[track] and track.IsPlaying then
-                pcall(function()
-                    track:Stop(0)
-                    track:AdjustSpeed(0)
-                end)
-            end
-        end
-    end)
-
-    RunService.Stepped:Connect(function()
-        if not IsEnabled then return end
-        
-        for track, _ in pairs(killedTracks) do
-            if track and track.IsPlaying then
-                pcall(function()
-                    track:Stop(0)
-                    track:AdjustSpeed(0)
-                end)
-            end
-        end
-    end)
-
-    player.CharacterAdded:Connect(function(newChar)
-        task.wait(1.5)
-        char = newChar
-        humanoid = char:WaitForChild("Humanoid")
-        Animator = humanoid:FindFirstChildOfClass("Animator")
-        if not Animator then Animator = Instance.new("Animator", humanoid) end
-        
-        killedTracks = {}
-        replaceCount = 0
-        
-        if IsEnabled and CurrentSkin then
-            task.wait(0.5)
-            LoadAnimationPool(CurrentSkin)
-        end
-    end)
-
-    -- Public API
-    local SkinAPI = {}
-    function SkinAPI.SwitchSkin(skinId)
-        if not SkinDatabase[skinId] then return false end
-        CurrentSkin = skinId
-        if IsEnabled then return LoadAnimationPool(skinId) end
-        return true
-    end
-
-    function SkinAPI.Enable()
-        if IsEnabled then return false end
-        if not CurrentSkin then return false end
-        local success = LoadAnimationPool(CurrentSkin)
-        if success then
-            IsEnabled = true
-            killedTracks = {}
-            replaceCount = 0
-            return true
-        end
-        return false
-    end
-
-    function SkinAPI.Disable()
-        if not IsEnabled then return false end
-        IsEnabled = false
-        killedTracks = {}
-        replaceCount = 0
-        for _, track in ipairs(AnimationPool) do
-            pcall(function() track:Stop(0) end)
-        end
-        return true
-    end
-
-    function SkinAPI.IsEnabled() return IsEnabled end
-    function SkinAPI.GetCurrentSkin() return CurrentSkin end
-    function SkinAPI.GetReplaceCount() return replaceCount end
-
-    return SkinAPI
-end)()
-
--- UI di Tab10
-Tab10:Dropdown({
-    Title = "Pilih Custom Skin",
-    Values = {"Eclipse", "HolyTrident", "SoulScythe", "OceanicHarpoon", "BinaryEdge", "Vanquisher", "KrampusScythe", "BanHammer", "CorruptionEdge", "PrincessParasol"},
-    Value = "Eclipse",  -- default
-    Callback = function(selected)
-        local success = SkinAnimation.SwitchSkin(selected)
-        WindUI:Notify({
-            Title = "Skin Animation",
-            Content = success and "Skin diubah ke: " .. selected or "Gagal load skin!",
-            Duration = 3
-        })
-    end
-})
-
-Tab10:Toggle({
-    Title = "Enable Custom Skin Animation",
-    Value = false,
-    Callback = function(state)
-        local success
-        if state then
-            success = SkinAnimation.Enable()
-        else
-            success = SkinAnimation.Disable()
-        end
-        
-        WindUI:Notify({
-            Title = "Skin Animation",
-            Content = state and (success and "Aktif - Animasi fish caught diganti!" or "Gagal aktifkan!") 
-                     or "Dimatikan",
-            Duration = 4
-        })
-    end
-})
-
-Tab10:Divider()
