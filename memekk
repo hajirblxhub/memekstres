@@ -2059,205 +2059,6 @@ end)
 
 Tab4:Divider()
 
-Tab4:Section({
-    Title = "Event Teleporter",
-    Icon = "calendar",
-})
-
-local Workspace = game:GetService("Workspace")
-local player = game.Players.LocalPlayer
-local character = player.Character or player.CharacterAdded:Wait()
-local hrp = character:WaitForChild("HumanoidRootPart")
-
-player.CharacterAdded:Connect(function(c)
-    character = c
-    hrp = c:WaitForChild("HumanoidRootPart")
-end)
-
-local megCheckRadius = 150
-local createdEventPlatform = nil
-
-Config.autoEventTPEnabled = Config.autoEventTPEnabled or false
-Config.selectedEvents = Config.selectedEvents or {}
-
-local eventData = {
-    ["Worm Hunt"] = {
-        TargetName = "Model",
-        Locations = {
-            Vector3.new(2190.85, -1.4, 97.575), 
-            Vector3.new(-2450.679, -1.4, 139.731), 
-            Vector3.new(-267.479, -1.4, 5188.531),
-            Vector3.new(-327, -1.4, 2422)
-        },
-        PlatformY = 107,
-        Priority = 1,
-        Icon = "fish"
-    },
-    ["Megalodon Hunt"] = {
-        TargetName = "Megalodon Hunt",
-        Locations = {
-            Vector3.new(-1076.3, -1.4, 1676.2),
-            Vector3.new(-1191.8, -1.4, 3597.3),
-            Vector3.new(412.7, -1.4, 4134.4),
-        },
-        PlatformY = 107,
-        Priority = 2,
-        Icon = "anchor"
-    },
-    ["Ghost Shark Hunt"] = {
-        TargetName = "Ghost Shark Hunt",
-        Locations = {
-            Vector3.new(489.559, -1.35, 25.406), 
-            Vector3.new(-1358.216, -1.35, 4100.556), 
-            Vector3.new(627.859, -1.35, 3798.081)
-        },
-        PlatformY = 107,
-        Priority = 3,
-        Icon = "fish"
-    },
-    ["Shark Hunt"] = {
-        TargetName = "Shark Hunt",
-        Locations = {
-            Vector3.new(1.65, -1.35, 2095.725),
-            Vector3.new(1369.95, -1.35, 930.125),
-            Vector3.new(-1585.5, -1.35, 1242.875),
-            Vector3.new(-1896.8, -1.35, 2634.375)
-        },
-        PlatformY = 107,
-        Priority = 4,
-        Icon = "fish"
-    },
-}
-
-local eventNames = {}
-for name in pairs(eventData) do
-    table.insert(eventNames, name)
-end
-
-local function destroyEventPlatform()
-    if createdEventPlatform and createdEventPlatform.Parent then
-        createdEventPlatform:Destroy()
-        createdEventPlatform = nil
-    end
-end
-
-local function createAndTeleportToPlatform(targetPos, y)
-    destroyEventPlatform()
-
-    local platform = Instance.new("Part")
-    platform.Size = Vector3.new(5, 1, 5)
-    platform.Position = Vector3.new(targetPos.X, y, targetPos.Z)
-    platform.Anchored = true
-    platform.Transparency = 1
-    platform.CanCollide = true
-    platform.Name = "EventPlatform"
-    platform.Parent = Workspace
-    createdEventPlatform = platform
-
-    hrp.CFrame = CFrame.new(platform.Position + Vector3.new(0, 3, 0))
-    WindUI:Notify({
-        Title = "Event TP",
-        Content = "Teleport ke event terdeteksi!",
-        Duration = 3
-    })
-end
-
-local function runMultiEventTP()
-    while Config.autoEventTPEnabled do
-        local sorted = {}
-        for _, e in ipairs(Config.selectedEvents) do
-            if eventData[e] then
-                table.insert(sorted, eventData[e])
-            end
-        end
-        table.sort(sorted, function(a, b) return a.Priority < b.Priority end)
-
-        for _, config in ipairs(sorted) do
-            local foundTarget, foundPos = nil, nil
-
-            if config.TargetName == "Model" then
-                local menuRings = Workspace:FindFirstChild("!!! MENU RINGS")
-                if menuRings then
-                    for _, props in ipairs(menuRings:GetChildren()) do
-                        if props.Name == "Props" then
-                            local model = props:FindFirstChild("Model")
-                            if model and model.PrimaryPart then
-                                for _, loc in ipairs(config.Locations) do
-                                    if (model.PrimaryPart.Position - loc).Magnitude <= megCheckRadius then
-                                        foundTarget = model
-                                        foundPos = model.PrimaryPart.Position
-                                        break
-                                    end
-                                end
-                            end
-                        end
-                        if foundTarget then break end
-                    end
-                end
-            else
-                for _, loc in ipairs(config.Locations) do
-                    for _, d in ipairs(Workspace:GetDescendants()) do
-                        if d.Name == config.TargetName then
-                            local pos = d:IsA("BasePart") and d.Position or (d.PrimaryPart and d.PrimaryPart.Position)
-                            if pos and (pos - loc).Magnitude <= megCheckRadius then
-                                foundTarget = d
-                                foundPos = pos
-                                break
-                            end
-                        end
-                    end
-                    if foundTarget then break end
-                end
-            end
-
-            if foundTarget and foundPos then
-                createAndTeleportToPlatform(foundPos, config.PlatformY)
-            end
-        end
-        task.wait(0.05)
-    end
-    destroyEventPlatform()
-end
-
-Tab4:Dropdown({
-    Title = "Select Events",
-    Values = eventNames,
-    Multi = true,
-    AllowNone = true,
-    Value = Config.selectedEvents,
-    Callback = function(values)
-        Config.selectedEvents = values or {}
-        WindUI:Notify({
-            Title = "Event TP",
-            Content = "Event dipilih: " .. (#Config.selectedEvents > 0 and table.concat(Config.selectedEvents, ", ") or "None"),
-            Duration = 3
-        })
-    end
-})
-
-Tab4:Toggle({
-    Title = "Auto Event Teleport",
-    Default = Config.autoEventTPEnabled,
-    Callback = function(state)
-        Config.autoEventTPEnabled = state
-        if state then
-            task.spawn(runMultiEventTP)
-            WindUI:Notify({Title = "Event TP", Content = "Auto TP aktif - scanning event...", Duration = 3})
-        else
-            destroyEventPlatform()
-            WindUI:Notify({Title = "Event TP", Content = "Auto TP dimatikan", Duration = 2})
-        end
-    end
-})
-
-Tab4:Button({
-    Title = "Destroy Platform Now",
-    Callback = function()
-        destroyEventPlatform()
-        WindUI:Notify({Title = "Platform", Content = "Event platform dihapus", Duration = 2})
-    end
-})
-
 local Tab5 = Window:Tab({
     Title = "Farming",
     Icon = "rbxassetid://127294509474612",
@@ -2599,6 +2400,171 @@ Tab5:Button({
 })
 
 Tab5:Divider()
+
+-- Taruh ini di Tab 5 (Setelah Auto Favorite)
+Tab5:Section({
+    Title = "Event Teleporter",
+    Icon = "calendar",
+    TextXAlignment = "Left",
+    TextSize = 17,
+})
+
+Tab5:Divider()
+
+-- Logic & Variable (Tetap perlu didefinisikan)
+local Workspace = game:GetService("Workspace")
+local player = game.Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")
+
+-- Update HRP kalau mati
+player.CharacterAdded:Connect(function(c)
+	character = c
+	hrp = c:WaitForChild("HumanoidRootPart")
+end)
+
+local megCheckRadius = 150
+local autoEventTPEnabled = false
+local selectedEvents = {}
+local createdEventPlatform = nil
+
+local eventData = {
+	["Worm Hunt"] = {
+		TargetName = "Model",
+		Locations = {
+			Vector3.new(2190.85, -1.4, 97.575), 
+			Vector3.new(-2450.679, -1.4, 139.731), 
+			Vector3.new(-267.479, -1.4, 5188.531),
+			Vector3.new(-327, -1.4, 2422)
+		},
+		PlatformY = 107, Priority = 1
+	},
+	["Megalodon Hunt"] = {
+		TargetName = "Megalodon Hunt",
+		Locations = {
+			Vector3.new(-1076.3, -1.4, 1676.2),
+			Vector3.new(-1191.8, -1.4, 3597.3),
+			Vector3.new(412.7, -1.4, 4134.4),
+		},
+		PlatformY = 107, Priority = 2
+	},
+	["Ghost Shark Hunt"] = {
+		TargetName = "Ghost Shark Hunt",
+		Locations = {
+			Vector3.new(489.559, -1.35, 25.406), 
+			Vector3.new(-1358.216, -1.35, 4100.556), 
+			Vector3.new(627.859, -1.35, 3798.081)
+		},
+		PlatformY = 107, Priority = 3
+	},
+	["Shark Hunt"] = {
+		TargetName = "Shark Hunt",
+		Locations = {
+			Vector3.new(1.65, -1.35, 2095.725),
+			Vector3.new(1369.95, -1.35, 930.125),
+			Vector3.new(-1585.5, -1.35, 1242.875),
+			Vector3.new(-1896.8, -1.35, 2634.375)
+		},
+		PlatformY = 107, Priority = 4
+	},
+}
+
+local eventNames = {}
+for name in pairs(eventData) do table.insert(eventNames, name) end
+
+local function destroyEventPlatform()
+	if createdEventPlatform then
+		createdEventPlatform:Destroy()
+		createdEventPlatform = nil
+	end
+end
+
+local function createAndTeleportToPlatform(targetPos, y)
+	destroyEventPlatform()
+	local platform = Instance.new("Part")
+	platform.Size = Vector3.new(7, 1, 7)
+	platform.Position = Vector3.new(targetPos.X, y, targetPos.Z)
+	platform.Anchored = true
+	platform.Transparency = 1
+	platform.CanCollide = true
+	platform.Name = "EventPlatform"
+	platform.Parent = Workspace
+	createdEventPlatform = platform
+	hrp.CFrame = CFrame.new(platform.Position + Vector3.new(0, 3, 0))
+end
+
+local function runMultiEventTP()
+	while autoEventTPEnabled do
+		local sorted = {}
+		for _, e in ipairs(selectedEvents) do
+			if eventData[e] then table.insert(sorted, eventData[e]) end
+		end
+		table.sort(sorted, function(a, b) return a.Priority < b.Priority end)
+
+		for _, config in ipairs(sorted) do
+			if not autoEventTPEnabled then break end
+			local foundTarget, foundPos = nil, nil
+
+			if config.TargetName == "Model" then
+				local menuRings = Workspace:FindFirstChild("!!! MENU RINGS")
+				if menuRings then
+					for _, props in ipairs(menuRings:GetChildren()) do
+						local model = props:FindFirstChild("Model")
+						if model and model.PrimaryPart then
+							for _, loc in ipairs(config.Locations) do
+								if (model.PrimaryPart.Position - loc).Magnitude <= megCheckRadius then
+									foundTarget = model; foundPos = model.PrimaryPart.Position; break
+								end
+							end
+						end
+						if foundTarget then break end
+					end
+				end
+			else
+				for _, loc in ipairs(config.Locations) do
+					for _, d in ipairs(Workspace:GetDescendants()) do
+						if d.Name == config.TargetName then
+							local pos = d:IsA("BasePart") and d.Position or (d.PrimaryPart and d.PrimaryPart.Position)
+							if pos and (pos - loc).Magnitude <= megCheckRadius then
+								foundTarget = d; foundPos = pos; break
+							end
+						end
+					end
+					if foundTarget then break end
+				end
+			end
+			if foundTarget and foundPos then
+				createAndTeleportToPlatform(foundPos, config.PlatformY)
+			end
+		end
+		task.wait(1) -- Dibuat 1 detik biar gak berat
+	end
+	destroyEventPlatform()
+end
+
+-- UI ELEMENTS (SEMUA DI TAB 5)
+Tab5:Dropdown({
+	Title = "Select Events",
+	Values = eventNames,
+	Multi = true,
+	AllowNone = true,
+	Callback = function(values)
+		selectedEvents = values
+	end
+})
+
+Tab5:Toggle({
+	Title = "Auto Event",
+	Value = false,
+	Callback = function(state)
+		autoEventTPEnabled = state
+		if state then
+			task.spawn(runMultiEventTP)
+		else
+			destroyEventPlatform()
+		end
+	end
+})
 
 local Tab6 = Window:Tab({
     Title = "Misc",
