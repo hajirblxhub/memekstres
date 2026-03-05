@@ -1546,42 +1546,38 @@ end
 
 
 
+-- =============================================
+-- AUTO SELL FISH (VERSI DINAMIS + DISPLAY COUNT)
+-- Taruh di Tab3 (Main/Automation)
+-- =============================================
+
+Tab3:Divider()
+
 Tab3:Section({
-    Title = "Sell Controls",
+    Title = "Auto Sell Fish",
     Icon = "dollar-sign",
+    TextSize = 20
 })
 
--- Remote (udah lo define di atas)
+-- Remote (pastikan di awal script lo ada ini)
 Events.sell = GetServerRemote("RF/SellAllItems")
 
--- Config default
-Config.SellMode             = Config.SellMode or "Minute"  -- "Minute" atau "Count"
-Config.SellValue            = Config.SellValue or 5
-Config.AutoSell             = Config.AutoSell or false
-Config.SellOnlyNonFavorited = Config.SellOnlyNonFavorited ~= false  -- default true (non-fav only)
-Config.ForceSellAll         = Config.ForceSellAll or false
+-- Variabel
+_G.AutoSellState   = _G.AutoSellState or false
+_G.AutoSellMethod  = _G.AutoSellMethod or "Delay"
+_G.AutoSellValue   = _G.AutoSellValue or 50
+_G.AutoSellThread  = _G.AutoSellThread or nil
 
--- Fungsi jual semua
-local function sellAll()
-    pcall(function()
-        if Events.sell then
-            Events.sell:InvokeServer({})
-        else
-            warn("[Auto Sell] Events.sell nil! Cek GetServerRemote.")
-        end
-    end)
-end
-
--- Hitung ikan yang bisa dijual (respect favorit)
-local function getSellableFishCount()
+-- Fungsi hitung ikan (pakai inventory Replion/DataService)
+local function GetFishCount()
     local count = 0
     pcall(function()
-        local inv = PlayerData:GetExpect("Inventory")  -- atau DataService:GetExpect("Inventory")
-        if inv and inv.Fish then
-            for _, fish in pairs(inv.Fish) do
-                local favorited = fish.Favorited or fish.IsFavorited or false
-                if Config.ForceSellAll or not favorited then
-                    count = count + 1
+        local inv = DataService:GetExpect({ "Inventory", "Items" })
+        if inv then
+            for _, item in ipairs(inv) do
+                local info = ItemUtility:GetItemDataFromItemType("Items", item.Id)
+                if info and info.Data.Type == "Fish" then
+                    count = count + (item.Quantity or 1)
                 end
             end
         end
@@ -1589,168 +1585,132 @@ local function getSellableFishCount()
     return count
 end
 
--- Logic loop auto sell
-local function autoSellLogic()
-    while Config.AutoSell do
-        task.wait(1)
-        
-        local currentSellable = getSellableFishCount()
-        
-        if currentSellable <= 0 then
-            task.wait(5)
-            continue
-        end
-        
-        if Config.SellMode == "Minute" then
-            local waitTime = (Config.SellValue * 60) - 1
-            if waitTime > 0 then task.wait(waitTime) end
+-- Unified loop auto sell
+local function RunAutoSellLoop()
+    if _G.AutoSellThread then task.cancel(_G.AutoSellThread) end
+    
+    _G.AutoSellThread = task.spawn(function()
+        while _G.AutoSellState do
+            if not Events.sell then
+                WindUI:Notify({ Title = "Error", Content = "Remote SellAllItems nil!", Duration = 5 })
+                _G.AutoSellState = false
+                break
+            end
             
-            if Config.AutoSell and currentSellable > 0 then
-                local before = currentSellable
-                sellAll()
-                task.wait(3.5)
-                local sold = before - getSellableFishCount()
-                if sold > 0 then
+            if _G.AutoSellMethod == "Delay" then
+                pcall(function()
+                    Events.sell:InvokeServer({})
+                end)
+                task.wait(math.max(_G.AutoSellValue, 1))  -- minimal 1 detik
+                
+            elseif _G.AutoSellMethod == "Count" then
+                local currentCount = GetFishCount()
+                
+                if currentCount >= _G.AutoSellValue then
+                    pcall(function()
+                        Events.sell:InvokeServer({})
+                    end)
                     WindUI:Notify({
                         Title = "Auto Sell",
-                        Content = "💸 Terjual " .. sold .. " ikan (" .. (Config.ForceSellAll and "All" or "Non-Fav") .. ")",
-                        Duration = 5
+                        Content = "Menjual " .. currentCount .. " ikan!",
+                        Duration = 3
                     })
+                    task.wait(2)  -- cooldown setelah jual
                 end
+                task.wait(1)  -- cek tiap detik
             end
-        elseif Config.SellMode == "Count" then
-            if currentSellable >= Config.SellValue then
-                local before = currentSellable
-                sellAll()
-                task.wait(3.5)
-                local sold = before - getSellableFishCount()
-                if sold > 0 then
-                    WindUI:Notify({
-                        Title = "Auto Sell",
-                        Content = "💸 Tas penuh! Terjual " .. sold .. " ikan (" .. (Config.ForceSellAll and "All" or "Non-Fav") .. ")",
-                        Duration = 5
-                    })
-                end
-            end
-            task.wait(4)
         end
-    end
+    end)
 end
 
--- Fungsi update task
-local function updateAutoSellTask()
-    if Config.AutoSell then
-        if Tasks.autoSellTask then task.cancel(Tasks.autoSellTask) end
-        Tasks.autoSellTask = task.spawn(autoSellLogic)
-    else
-        if Tasks.autoSellTask then task.cancel(Tasks.autoSellTask) end
-        Tasks.autoSellTask = nil
-    end
-end
+-- Display jumlah ikan real-time
+local countDisplay = Tab3:Paragraph({
+    Title = "Current Fish Count: 0",
+    Content = "Update setiap detik"
+})
 
--- UI Controls
-Tab3:Toggle({
-    Title = "Auto Sell (Minute Mode)",
-    Description = "Jual otomatis setiap X menit",
-    Value = (Config.SellMode == "Minute" and Config.AutoSell),
-    Callback = function(Value)
-        if Value then
-            Config.SellMode = "Minute"
-            Config.AutoSell = true
-            updateAutoSellTask()
-            WindUI:Notify({Title = "Auto Sell", Content = "Minute Mode ON - setiap " .. Config.SellValue .. " menit", Duration = 4})
-        else
-            if Config.SellMode == "Minute" then Config.AutoSell = false end
-            updateAutoSellTask()
-            WindUI:Notify({Title = "Auto Sell", Content = "Dimatikan", Duration = 2})
+spawn(function()
+    while task.wait(1) do
+        if countDisplay then
+            local count = GetFishCount()
+            countDisplay:SetTitle("Current Fish Count: " .. tostring(count))
         end
-        SaveConfig(1)  -- kalau lo punya
+    end
+end)
+
+-- Dropdown Method
+local methodDropdown = Tab3:Dropdown({
+    Title = "Select Method",
+    Values = {"Delay", "Count"},
+    Value = _G.AutoSellMethod,
+    Multi = false,
+    AllowNone = false,
+    Callback = function(val)
+        _G.AutoSellMethod = val
+        
+        -- Update judul input dinamis
+        if inputElement then
+            if val == "Delay" then
+                inputElement:SetTitle("Sell Delay (Seconds)")
+                inputElement:SetPlaceholder("Contoh: 50")
+            else
+                inputElement:SetTitle("Sell at Item Count")
+                inputElement:SetPlaceholder("Contoh: 100")
+            end
+        end
+        
+        -- Restart loop kalau aktif
+        if _G.AutoSellState then
+            RunAutoSellLoop()
+        end
     end
 })
 
-Tab3:Toggle({
-    Title = "Auto Sell (Count Mode)",
-    Description = "Jual otomatis saat >= X ikan",
-    Value = (Config.SellMode == "Count" and Config.AutoSell),
-    Callback = function(Value)
-        if Value then
-            Config.SellMode = "Count"
-            Config.AutoSell = true
-            updateAutoSellTask()
-            WindUI:Notify({Title = "Auto Sell", Content = "Count Mode ON - saat >= " .. Config.SellValue .. " ikan", Duration = 4})
-        else
-            if Config.SellMode == "Count" then Config.AutoSell = false end
-            updateAutoSellTask()
-            WindUI:Notify({Title = "Auto Sell", Content = "Dimatikan", Duration = 2})
-        end
-        SaveConfig(1)
-    end
-})
-
-Tab3:Input({
-    Title = "Set Value (Menit / Jumlah Ikan)",
-    Description = "Contoh: 5 menit atau 200 ikan",
-    Placeholder = "Contoh: 5",
-    Value = tostring(Config.SellValue),
-    Callback = function(Text)
-        local num = tonumber(Text)
+-- Input Value (dinamis)
+local inputElement = Tab3:Input({
+    Title = "Sell Delay (Seconds)",  -- judul awal
+    Placeholder = "Contoh: 50",
+    Value = tostring(_G.AutoSellValue),
+    Callback = function(text)
+        local num = tonumber(text)
         if num and num > 0 then
-            Config.SellValue = num
-            SaveConfig(1)
-            WindUI:Notify({Title = "Updated", Content = "Value diubah ke " .. num .. " (" .. Config.SellMode .. " mode)", Duration = 3})
+            _G.AutoSellValue = num
+            WindUI:Notify({Title = "Updated", Content = "Value diubah ke " .. num .. " (" .. _G.AutoSellMethod .. ")", Duration = 3})
         else
             WindUI:Notify({Title = "Error", Content = "Masukkan angka positif!", Duration = 3})
         end
     end
 })
 
+-- Toggle Enable
 Tab3:Toggle({
-    Title = "Sell Only Non-Favorited",
-    Description = "Jual hanya yang bukan favorit",
-    Value = Config.SellOnlyNonFavorited,
-    Callback = function(Value)
-        Config.SellOnlyNonFavorited = Value
-        SaveConfig(1)
-    end
-})
-
-Tab3:Toggle({
-    Title = "Force Sell All (Ignore Favorit)",
-    Description = "Jual SEMUA termasuk favorit",
-    Value = Config.ForceSellAll,
-    Callback = function(Value)
-        Config.ForceSellAll = Value
-        WindUI:Notify({
-            Title = "Warning",
-            Content = Value and "Force All ON - favorit bisa terjual!" or "Force All OFF",
-            Duration = 5
-        })
-        SaveConfig(1)
-    end
-})
-
-Tab3:Button({
-    Title = "Sell All Now (Sesuai Setting)",
-    Description = "Jual paksa sekarang",
-    Callback = function()
-        local before = getSellableFishCount()
-        sellAll()
-        task.wait(3)
-        local total = before - getSellableFishCount()
-        WindUI:Notify({
-            Title = "Manual Sell",
-            Content = total > 0 and "✅ Terjual " .. total .. " ikan!" or "❌ Gak ada yang dijual",
-            Duration = 4
-        })
+    Title = "Enable Auto Sell",
+    Value = _G.AutoSellState,
+    Callback = function(state)
+        _G.AutoSellState = state
+        
+        if state then
+            if not Events.sell then
+                WindUI:Notify({ Title = "Error", Content = "Remote Sell tidak ditemukan!", Duration = 5 })
+                _G.AutoSellState = false
+                return
+            end
+            
+            local msg = (_G.AutoSellMethod == "Delay") and ("Setiap " .. _G.AutoSellValue .. " detik") 
+                        or ("Saat jumlah >= " .. _G.AutoSellValue)
+            WindUI:Notify({ Title = "Auto Sell ON", Content = msg, Duration = 4 })
+            RunAutoSellLoop()
+        else
+            WindUI:Notify({ Title = "Auto Sell OFF", Duration = 3 })
+            if _G.AutoSellThread then 
+                task.cancel(_G.AutoSellThread) 
+                _G.AutoSellThread = nil 
+            end
+        end
     end
 })
 
 Tab3:Divider()
-
--- Auto start kalau config nyala dari awal
-if Config.AutoSell then
-    updateAutoSellTask()
-end
 
 if isMobile then
     Events.SpawnTotem = GetServerRemote("RE/SpawnTotem")
@@ -2263,69 +2223,285 @@ Tab5:Toggle({
     end
 })
 
--- Auto Favorites By Mutation (persis, tanpa Add)
-Tab5:Section({
-    Title = "Auto Favorites By Mutation",
+-- =============================================
+-- AUTO FAVORITE / UNFAVORITE (FIX NIL VALUE + DEBUG)
+-- =============================================
+
+Tab5:Divider()
+
+local favsec = Tab5:Section({
+    Title = "Auto Favorite / Unfavorite",
     Icon = "star",
+    TextSize = 20
 })
 
--- Toggle RUBY GEMSTONE (tetap terpisah)
-Tab5:Toggle({
-    Title = "RUBY GEMSTONE",
-    Description = "Husus Ruby Gemstone",
-    Default = Config.FavRubyGemstone,
-    Callback = function(Value)
-        Config.FavRubyGemstone = Value
+Tab5:Divider()
+
+-- =============================================
+-- DEBUG: PRINT SEMUA REMOTE DI NET (JALAN SEKALI PAS LOAD)
+-- =============================================
+task.spawn(function()
+    task.wait(3)  -- tunggu net ready
+    print("=== DEBUG REMOTE NET FOLDER ===")
+    local netFolder = ReplicatedStorage.Packages._Index["sleitnick_net@0.2.0"].net
+    if netFolder then
+        for _, remote in ipairs(netFolder:GetChildren()) do
+            print(remote.Name)
+        end
+    else
+        print("Net folder tidak ditemukan!")
     end
-})
+    print("================================")
+end)
 
--- List mutation
-local mutations = {
-    "Gemstone", "Fairy Dust", "Cupid", "Leviathan Rage", "Crystalized", "Color Burn", "Lightning", "Noob", "Radioactive", "Midnight", "Holographic", "Bloodmoon", "Festive", "Galaxy", "Albino", "Gold", "Frozen", "Corrupt"
-}
+-- Definisi remote (pakai Events)
+Events.favorite = GetServerRemote("RE/FavoriteItem")  -- <-- GANTI NAMA INI SESUAI PRINT DEBUG
 
--- Dropdown multi (dibuat dengan options kosong dulu)
-local favoriteDropdown = Tab5:Dropdown({
-    Title = "Favorite Mutations",
-    Description = "Pilih mutation yang ingin di-favorite otomatis (multi)",
-    Options = {},  -- kosong dulu biar ga error
-    Multi = true,
-    Default = function()
-        local defaults = {}
-        for _, name in ipairs(mutations) do
-            if isTargetVariant(name) then
-                table.insert(defaults, name)
-            end
-        end
-        return defaults
-    end,
-    Callback = function(selected)
-        mutationTarget = {}  -- reset dulu
-        for _, name in ipairs(selected) do
-            table.insert(mutationTarget, name)
-        end
-        -- Ruby tetap ikut kalau toggle ON
-        if Config.FavRubyGemstone then
-            table.insert(mutationTarget, "Gemstone")
-        end
-        print("Mutation favorit updated: " .. table.concat(mutationTarget, ", "))
-    end
-})
-
--- Force render list setelah UI load (delay 3-5 detik)
+-- Cek remote pas load
 task.delay(4, function()
-    if favoriteDropdown then
-        -- Set ulang options
-        favoriteDropdown.Options = mutations
-        -- Kalau library punya Refresh method, panggil
-        if favoriteDropdown.Refresh then
-            favoriteDropdown:Refresh(mutations, true)
-        end
-        print("Dropdown favorite mutations refreshed - list harus muncul sekarang")
+    if not Events.favorite then
+        WindUI:Notify({
+            Title = "Error Fatal",
+            Content = "Remote FavoriteItem NIL! Cek console → cari nama remote yang mirip 'Favorite' atau 'ToggleFavorite'",
+            Duration = 10
+        })
+    else
+        print("[Fav Debug] Events.favorite OK")
     end
 end)
 
+-- Variabel filter global
+local selectedRarities   = selectedRarities or {}
+local selectedItemNames  = selectedItemNames or {}
+local selectedMutations  = selectedMutations or {}
+
+local autoFavoriteState   = false
+local autoUnfavoriteState = false
+local autoFavoriteThread   = nil
+local autoUnfavoriteThread = nil
+
+-- =============================================
+-- FUNGSI HELPER (sama seperti lo, tapi lebih aman)
+-- =============================================
+
+local function getAutoFavoriteItemOptions()
+    local itemNames = {}
+    local itemsContainer = ReplicatedStorage:FindFirstChild("Items")
+
+    if not itemsContainer then
+        return {"(Items folder tidak ditemukan)"}
+    end
+
+    for _, item in ipairs(itemsContainer:GetChildren()) do
+        local name = item.Name
+        if type(name) == "string" and #name >= 3 and name:sub(1,3) ~= "!!!" then
+            table.insert(itemNames, name)
+        end
+    end
+
+    table.sort(itemNames)
+    return #itemNames > 0 and itemNames or {"Tidak ada item valid"}
+end
+
+local allItemNames = getAutoFavoriteItemOptions()
+
+local function GetItemsToFavorite()
+    local replion = GetPlayerDataReplion()
+    if not replion then return {} end
+
+    local inventoryData = replion:GetExpect("Inventory")
+    if not inventoryData or not inventoryData.Items then return {} end
+
+    local items = {}
+    local hasFilter = #selectedRarities > 0 or #selectedItemNames > 0 or #selectedMutations > 0
+
+    if not hasFilter then return {} end
+
+    for _, item in ipairs(inventoryData.Items) do
+        if item.IsFavorite or item.Favorited then continue end
+        
+        local uuid = item.UUID
+        if typeof(uuid) ~= "string" or #uuid < 10 then continue end
+        
+        local name, rarity = GetFishNameAndRarity(item)
+        local mutation = GetItemMutationString(item)
+        
+        local match = false
+        if #selectedRarities > 0   and table.find(selectedRarities, rarity)   then match = true end
+        if #selectedItemNames > 0  and table.find(selectedItemNames, name)    then match = true end
+        if #selectedMutations > 0  and table.find(selectedMutations, mutation) then match = true end
+        
+        if match then table.insert(items, uuid) end
+    end
+
+    return items
+end
+
+local function GetItemsToUnfavorite()
+    local replion = GetPlayerDataReplion()
+    if not replion then return {} end
+
+    local inventoryData = replion:GetExpect("Inventory")
+    if not inventoryData or not inventoryData.Items then return {} end
+
+    local items = {}
+
+    for _, item in ipairs(inventoryData.Items) do
+        if not (item.IsFavorite or item.Favorited) then continue end
+        
+        local uuid = item.UUID
+        if typeof(uuid) ~= "string" or #uuid < 10 then continue end
+        
+        local name, rarity = GetFishNameAndRarity(item)
+        local mutation = GetItemMutationString(item)
+        
+        local match = false
+        if #selectedRarities > 0   and table.find(selectedRarities, rarity)   then match = true end
+        if #selectedItemNames > 0  and table.find(selectedItemNames, name)    then match = true end
+        if #selectedMutations > 0  and table.find(selectedMutations, mutation) then match = true end
+        
+        if match then table.insert(items, uuid) end
+    end
+
+    return items
+end
+
+local function SetFavorite(uuid, enable)
+    if not Events.favorite then
+        warn("[Fav] Remote nil! Skip favorite: " .. uuid)
+        return
+    end
+    
+    pcall(function()
+        Events.favorite:FireServer(uuid)  -- asumsi remote toggle (favorite/unfavorite sama)
+    end)
+end
+
+-- Loop Favorite
+local function RunAutoFavorite()
+    if autoFavoriteThread then task.cancel(autoFavoriteThread) end
+    
+    autoFavoriteThread = task.spawn(function()
+        while autoFavoriteState do
+            local items = GetItemsToFavorite()
+            if #items > 0 then
+                WindUI:Notify({Title = "Auto Fav", Content = "Favorite " .. #items .. " item...", Duration = 2})
+                for _, uuid in ipairs(items) do
+                    SetFavorite(uuid, true)
+                    task.wait(0.6)
+                end
+            end
+            task.wait(1.5)
+        end
+    end)
+end
+
+-- Loop Unfavorite
+local function RunAutoUnfavorite()
+    if autoUnfavoriteThread then task.cancel(autoUnfavoriteThread) end
+    
+    autoUnfavoriteThread = task.spawn(function()
+        while autoUnfavoriteState do
+            local items = GetItemsToUnfavorite()
+            if #items > 0 then
+                WindUI:Notify({Title = "Auto Unfav", Content = "Unfavorite " .. #items .. " item...", Duration = 2})
+                for _, uuid in ipairs(items) do
+                    SetFavorite(uuid, false)
+                    task.wait(0.6)
+                end
+            end
+            task.wait(1.5)
+        end
+    end)
+end
+
+-- =============================================
+-- UI
+-- =============================================
+
+-- Dropdown Rarity
+Tab5:Dropdown({
+    Title = "by Rarity",
+    Values = {"Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "SECRET"},
+    Multi = true,
+    AllowNone = true,
+    Callback = function(vals) selectedRarities = vals or {} end
+})
+
+-- Dropdown Item Name
+Tab5:Dropdown({
+    Title = "by Item Name",
+    Values = allItemNames,
+    Multi = true,
+    AllowNone = true,
+    Callback = function(vals) selectedItemNames = vals or {} end
+})
+
+-- Dropdown Mutation
+Tab5:Dropdown({
+    Title = "by Mutation",
+    Values = {"Shiny", "Gemstone", "Corrupt", "Galaxy", "Holographic", "Ghost", "Lightning", "Fairy Dust", "Gold", "Midnight", "Radioactive", "Stone", "Albino", "Sandy", "Acidic", "Disco", "Frozen", "Noob"},
+    Multi = true,
+    AllowNone = true,
+    Callback = function(vals) selectedMutations = vals or {} end
+})
+
+-- Toggle Auto Favorite
+Tab5:Toggle({
+    Title = "Enable Auto Favorite",
+    Value = autoFavoriteState,
+    Callback = function(state)
+        autoFavoriteState = state
+        if state then
+            if autoUnfavoriteState then
+                autoUnfavoriteState = false
+                WindUI:Notify({Title = "Auto Unfav", Content = "Dimatikan otomatis", Duration = 3})
+                if autoUnfavoriteThread then task.cancel(autoUnfavoriteThread) end
+            end
+            
+            if not GetPlayerDataReplion() then
+                WindUI:Notify({Title = "Error", Content = "Gagal load Replion", Duration = 5})
+                autoFavoriteState = false
+                return
+            end
+            
+            WindUI:Notify({Title = "Auto Fav", Content = "Aktif", Duration = 3})
+            RunAutoFavorite()
+        else
+            WindUI:Notify({Title = "Auto Fav", Content = "OFF", Duration = 2})
+            if autoFavoriteThread then task.cancel(autoFavoriteThread) end
+        end
+    end
+})
+
+-- Toggle Auto Unfavorite
+Tab5:Toggle({
+    Title = "Enable Auto Unfavorite",
+    Value = autoUnfavoriteState,
+    Callback = function(state)
+        autoUnfavoriteState = state
+        if state then
+            if autoFavoriteState then
+                autoFavoriteState = false
+                WindUI:Notify({Title = "Auto Fav", Content = "Dimatikan otomatis", Duration = 3})
+                if autoFavoriteThread then task.cancel(autoFavoriteThread) end
+            end
+            
+            if #selectedRarities == 0 and #selectedItemNames == 0 and #selectedMutations == 0 then
+                WindUI:Notify({Title = "Warning", Content = "Filter kosong, ga akan unfav apa-apa", Duration = 5})
+            end
+            
+            WindUI:Notify({Title = "Auto Unfav", Content = "Aktif", Duration = 3})
+            RunAutoUnfavorite()
+        else
+            WindUI:Notify({Title = "Auto Unfav", Content = "OFF", Duration = 2})
+            if autoUnfavoriteThread then task.cancel(autoUnfavoriteThread) end
+        end
+    end
+})
+
 Tab5:Divider()
+
 
 local Tab6 = Window:Tab({
     Title = "Misc",
