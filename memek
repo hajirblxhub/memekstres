@@ -13,6 +13,56 @@ else
     print("✓ UI loaded successfully!")
 end
 
+-- LOGIKA MASTER (TARUH DI ATAS)
+local autoEventTPEnabled = false
+local selectedEvents = {}
+local createdEventPlatform = nil
+local megCheckRadius = 150
+
+local eventData = {
+    ["Worm Hunt"] = {TargetName = "Model", Locations = {Vector3.new(2190.85, -1.4, 97.575), Vector3.new(-2450.679, -1.4, 139.731)}, PlatformY = 107, Priority = 1},
+    ["Megalodon Hunt"] = {TargetName = "Megalodon Hunt", Locations = {Vector3.new(-1076.3, -1.4, 1676.2), Vector3.new(-1191.8, -1.4, 3597.3)}, PlatformY = 107, Priority = 2},
+    ["Ghost Shark Hunt"] = {TargetName = "Ghost Shark Hunt", Locations = {Vector3.new(489.559, -1.35, 25.406), Vector3.new(-1358.216, -1.35, 4100.556)}, PlatformY = 107, Priority = 3},
+    ["Shark Hunt"] = {TargetName = "Shark Hunt", Locations = {Vector3.new(1.65, -1.35, 2095.725), Vector3.new(1369.95, -1.35, 930.125)}, PlatformY = 107, Priority = 4},
+}
+
+local function destroyEventPlatform()
+    if createdEventPlatform then createdEventPlatform:Destroy() createdEventPlatform = nil end
+end
+
+local function runMultiEventTP()
+    while autoEventTPEnabled do
+        local char = game.Players.LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        
+        if hrp then
+            for name, config in pairs(eventData) do
+                local isSelected = false
+                for _, v in ipairs(selectedEvents) do if v == name then isSelected = true break end end
+                
+                if isSelected then
+                    for _, loc in ipairs(config.Locations) do
+                        for _, d in ipairs(workspace:GetDescendants()) do
+                            if d.Name == config.TargetName and (d:IsA("BasePart") or d:IsA("Model")) then
+                                local pos = d:IsA("BasePart") and d.Position or (d.PrimaryPart and d.PrimaryPart.Position)
+                                if pos and (pos - loc).Magnitude <= megCheckRadius then
+                                    destroyEventPlatform()
+                                    local p = Instance.new("Part", workspace)
+                                    p.Size, p.Position, p.Anchored, p.Transparency = Vector3.new(15,1,15), Vector3.new(pos.X, config.PlatformY, pos.Z), true, 1
+                                    createdEventPlatform = p
+                                    hrp.CFrame = p.CFrame + Vector3.new(0,3,0)
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        task.wait(1)
+    end
+    destroyEventPlatform()
+end
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -2399,170 +2449,35 @@ Tab5:Button({
     end
 })
 
-Tab5:Divider()
-
--- =============================================
--- AUTO EVENT (TARUH DI TAB 5 SETELAH AUTO FAVORITE)
--- =============================================
+-- TARUH DI TAB 5 SETELAH AUTO FAVORITE
 Tab5:Section({
     Title = "Event Teleporter",
     Icon = "calendar",
-    TextXAlignment = "Left",
-    TextSize = 17,
 })
 
-Tab5:Divider()
-
--- Variabel Lokal khusus Event biar gak bentrok sama script lain
-local ev_Workspace = game:GetService("Workspace")
-local ev_Player = game:GetService("Players").LocalPlayer
-local ev_Character = ev_Player.Character or ev_Player.CharacterAdded:Wait()
-local ev_Hrp = ev_Character:WaitForChild("HumanoidRootPart")
-
-ev_Player.CharacterAdded:Connect(function(c)
-    ev_Character = c
-    ev_Hrp = c:WaitForChild("HumanoidRootPart")
-end)
-
-local ev_MegCheckRadius = 150
-local ev_AutoEnabled = false
-local ev_Selected = {}
-local ev_Platform = nil
-
-local ev_Data = {
-    ["Worm Hunt"] = {
-        TargetName = "Model",
-        Locations = {
-            Vector3.new(2190.85, -1.4, 97.575), 
-            Vector3.new(-2450.679, -1.4, 139.731), 
-            Vector3.new(-267.479, -1.4, 5188.531),
-            Vector3.new(-327, -1.4, 2422)
-        },
-        PlatformY = 107, Priority = 1
-    },
-    ["Megalodon Hunt"] = {
-        TargetName = "Megalodon Hunt",
-        Locations = {
-            Vector3.new(-1076.3, -1.4, 1676.2),
-            Vector3.new(-1191.8, -1.4, 3597.3),
-            Vector3.new(412.7, -1.4, 4134.4),
-        },
-        PlatformY = 107, Priority = 2
-    },
-    ["Ghost Shark Hunt"] = {
-        TargetName = "Ghost Shark Hunt",
-        Locations = {
-            Vector3.new(489.559, -1.35, 25.406), 
-            Vector3.new(-1358.216, -1.35, 4100.556), 
-            Vector3.new(627.859, -1.35, 3798.081)
-        },
-        PlatformY = 107, Priority = 3
-    },
-    ["Shark Hunt"] = {
-        TargetName = "Shark Hunt",
-        Locations = {
-            Vector3.new(1.65, -1.35, 2095.725),
-            Vector3.new(1369.95, -1.35, 930.125),
-            Vector3.new(-1585.5, -1.35, 1242.875),
-            Vector3.new(-1896.8, -1.35, 2634.375)
-        },
-        PlatformY = 107, Priority = 4
-    }
-}
-
-local ev_Names = {}
-for name in pairs(ev_Data) do table.insert(ev_Names, name) end
-
-local function ev_DestroyPlatform()
-    if ev_Platform then ev_Platform:Destroy() ev_Platform = nil end
-end
-
-local function ev_Teleport(pos, y)
-    ev_DestroyPlatform()
-    local p = Instance.new("Part")
-    p.Size = Vector3.new(10, 1, 10)
-    p.Position = Vector3.new(pos.X, y, pos.Z)
-    p.Anchored = true
-    p.Transparency = 1 -- Ubah ke 0.5 kalau mau kelihatan platformnya
-    p.CanCollide = true
-    p.Parent = ev_Workspace
-    ev_Platform = p
-    
-    if ev_Hrp then
-        ev_Hrp.CFrame = CFrame.new(p.Position + Vector3.new(0, 3, 0))
-    end
-end
-
-local function ev_MainLoop()
-    while ev_AutoEnabled do
-        local sorted = {}
-        for _, e in ipairs(ev_Selected) do
-            if ev_Data[e] then table.insert(sorted, ev_Data[e]) end
-        end
-        table.sort(sorted, function(a, b) return a.Priority < b.Priority end)
-
-        for _, config in ipairs(sorted) do
-            if not ev_AutoEnabled then break end
-            local foundTarget, foundPos = nil, nil
-
-            if config.TargetName == "Model" then
-                local rings = ev_Workspace:FindFirstChild("!!! MENU RINGS")
-                if rings then
-                    for _, p in ipairs(rings:GetChildren()) do
-                        local m = p:FindFirstChild("Model")
-                        if m and m.PrimaryPart then
-                            for _, loc in ipairs(config.Locations) do
-                                if (m.PrimaryPart.Position - loc).Magnitude <= ev_MegCheckRadius then
-                                    foundTarget = m; foundPos = m.PrimaryPart.Position; break
-                                end
-                            end
-                        end
-                        if foundTarget then break end
-                    end
-                end
-            else
-                for _, loc in ipairs(config.Locations) do
-                    for _, d in ipairs(ev_Workspace:GetDescendants()) do
-                        if d.Name == config.TargetName then
-                            local pos = d:IsA("BasePart") and d.Position or (d.PrimaryPart and d.PrimaryPart.Position)
-                            if pos and (pos - loc).Magnitude <= ev_MegCheckRadius then
-                                foundTarget = d; foundPos = pos; break
-                            end
-                        end
-                    end
-                    if foundTarget then break end
-                end
-            end
-
-            if foundTarget and foundPos then
-                ev_Teleport(foundPos, config.PlatformY)
-            end
-        end
-        task.wait(1)
-    end
-    ev_DestroyPlatform()
-end
-
--- UI ELEMENTS (DI TAB 5)
 Tab5:Dropdown({
-    Title = "Pilih Event",
-    Values = ev_Names,
+    Title = "Select Events",
+    Values = {"Worm Hunt", "Megalodon Hunt", "Ghost Shark Hunt", "Shark Hunt"},
     Multi = true,
-    Callback = function(v) ev_Selected = v end
+    Callback = function(v)
+        selectedEvents = v
+    end
 })
 
 Tab5:Toggle({
-    Title = "Auto Event Teleport",
+    Title = "Auto Event",
     Value = false,
     Callback = function(state)
-        ev_AutoEnabled = state
+        autoEventTPEnabled = state
         if state then 
-            task.spawn(ev_MainLoop) 
+            task.spawn(runMultiEventTP) 
         else 
-            ev_DestroyPlatform() 
+            destroyEventPlatform() 
         end
     end
 })
+
+Tab5:Divider()
 
 local Tab6 = Window:Tab({
     Title = "Misc",
