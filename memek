@@ -1545,308 +1545,14 @@ if isMobile then
     })
 end
 
-Tab3:Divider()
 
-Tab3:Section({
-    Title = "Custom Skin Animation",
-    Icon = "sparkles",
-    TextXAlignment = "Left",
-    TextSize = 17 
-})
+
+-- =============================================
+-- AUTO SELL FISH (VERSI DINAMIS + DISPLAY COUNT)
+-- Taruh di Tab3 (Main/Automation)
+-- =============================================
 
 Tab3:Divider()
-
--- Load module SkinAnimation (kode lo full)
-local SkinAnimation = (function()
-    local Players = game:GetService("Players")
-    local RunService = game:GetService("RunService")
-    local player = Players.LocalPlayer
-    local char = player.Character or player.CharacterAdded:Wait()
-    local humanoid = char:WaitForChild("Humanoid")
-
-    local Animator = humanoid:FindFirstChildOfClass("Animator")
-    if not Animator then
-        Animator = Instance.new("Animator", humanoid)
-    end
-
-    -- SKIN DATABASE
-    local SkinDatabase = {
-        ["Eclipse"] = "rbxassetid://107940819382815",
-        ["HolyTrident"] = "rbxassetid://128167068291703",
-        ["SoulScythe"] = "rbxassetid://82259219343456",
-        ["OceanicHarpoon"] = "rbxassetid://76325124055693",
-        ["BinaryEdge"] = "rbxassetid://109653945741202",
-        ["Vanquisher"] = "rbxassetid://93884986836266",
-        ["KrampusScythe"] = "rbxassetid://134934781977605",
-        ["BanHammer"] = "rbxassetid://96285280763544",
-        ["CorruptionEdge"] = "rbxassetid://126613975718573",
-        ["PrincessParasol"] = "rbxassetid://99143072029495"
-    }
-
-    local CurrentSkin = nil
-    local AnimationPool = {}
-    local IsEnabled = false
-    local POOL_SIZE = 3
-
-    local killedTracks = {}
-    local replaceCount = 0
-    local currentPoolIndex = 1
-
-    -- Load Animation Pool
-    local function LoadAnimationPool(skinId)
-        local animId = SkinDatabase[skinId]
-        if not animId then return false end
-        
-        -- Clear old pool
-        for _, track in ipairs(AnimationPool) do
-            pcall(function()
-                track:Stop(0)
-                track:Destroy()
-            end)
-        end
-        AnimationPool = {}
-        
-        local anim = Instance.new("Animation")
-        anim.AnimationId = animId
-        anim.Name = "CUSTOM_SKIN_ANIM"
-        
-        for i = 1, POOL_SIZE do
-            local track = Animator:LoadAnimation(anim)
-            track.Priority = Enum.AnimationPriority.Action4
-            track.Looped = false
-            track.Name = "SKIN_POOL_" .. i
-            
-            task.spawn(function()
-                pcall(function()
-                    track:Play(0, 1, 0)
-                    task.wait(0.05)
-                    track:Stop(0)
-                end)
-            end)
-            
-            table.insert(AnimationPool, track)
-        end
-        
-        currentPoolIndex = 1
-        return true
-    end
-
-    local function GetNextTrack()
-        for i = 1, POOL_SIZE do
-            local track = AnimationPool[i]
-            if track and not track.IsPlaying then
-                return track
-            end
-        end
-        
-        currentPoolIndex = currentPoolIndex % POOL_SIZE + 1
-        return AnimationPool[currentPoolIndex]
-    end
-
-    local function IsFishCaughtAnimation(track)
-        if not track or not track.Animation then return false end
-        
-        local trackName = string.lower(track.Name or "")
-        local animName = string.lower(track.Animation.Name or "")
-        
-        if string.find(trackName, "fishcaught") or 
-           string.find(animName, "fishcaught") or
-           string.find(trackName, "caught") or 
-           string.find(animName, "caught") then
-            return true
-        end
-        
-        return false
-    end
-
-    local function InstantReplace(originalTrack)
-        local nextTrack = GetNextTrack()
-        if not nextTrack then return end
-        
-        replaceCount = replaceCount + 1
-        killedTracks[originalTrack] = tick()
-        
-        task.spawn(function()
-            for i = 1, 10 do
-                pcall(function()
-                    if originalTrack.IsPlaying then
-                        originalTrack:Stop(0)
-                        originalTrack:AdjustSpeed(0)
-                        originalTrack.TimePosition = 0
-                    end
-                end)
-                task.wait()
-            end
-        end)
-        
-        pcall(function()
-            if nextTrack.IsPlaying then nextTrack:Stop(0) end
-            nextTrack:Play(0, 1, 1)
-            nextTrack:AdjustSpeed(1)
-        end)
-        
-        task.delay(1, function()
-            killedTracks[originalTrack] = nil
-        end)
-    end
-
-    -- Hooks
-    humanoid.AnimationPlayed:Connect(function(track)
-        if not IsEnabled then return end
-        if IsFishCaughtAnimation(track) then
-            task.spawn(function()
-                InstantReplace(track)
-            end)
-        end
-    end)
-
-    RunService.RenderStepped:Connect(function()
-        if not IsEnabled then return end
-        
-        local tracks = humanoid:GetPlayingAnimationTracks()
-        for _, track in ipairs(tracks) do
-            if string.find(string.lower(track.Name or ""), "skin_pool") then continue end
-            
-            if killedTracks[track] then
-                if track.IsPlaying then
-                    pcall(function()
-                        track:Stop(0)
-                        track:AdjustSpeed(0)
-                    end)
-                end
-                continue
-            end
-            
-            if track.IsPlaying and IsFishCaughtAnimation(track) then
-                task.spawn(function()
-                    InstantReplace(track)
-                end)
-            end
-        end
-    end)
-
-    RunService.Heartbeat:Connect(function()
-        if not IsEnabled then return end
-        
-        local tracks = humanoid:GetPlayingAnimationTracks()
-        for _, track in ipairs(tracks) do
-            if string.find(string.lower(track.Name or ""), "skin_pool") then continue end
-            
-            if killedTracks[track] and track.IsPlaying then
-                pcall(function()
-                    track:Stop(0)
-                    track:AdjustSpeed(0)
-                end)
-            end
-        end
-    end)
-
-    RunService.Stepped:Connect(function()
-        if not IsEnabled then return end
-        
-        for track, _ in pairs(killedTracks) do
-            if track and track.IsPlaying then
-                pcall(function()
-                    track:Stop(0)
-                    track:AdjustSpeed(0)
-                end)
-            end
-        end
-    end)
-
-    player.CharacterAdded:Connect(function(newChar)
-        task.wait(1.5)
-        char = newChar
-        humanoid = char:WaitForChild("Humanoid")
-        Animator = humanoid:FindFirstChildOfClass("Animator")
-        if not Animator then Animator = Instance.new("Animator", humanoid) end
-        
-        killedTracks = {}
-        replaceCount = 0
-        
-        if IsEnabled and CurrentSkin then
-            task.wait(0.5)
-            LoadAnimationPool(CurrentSkin)
-        end
-    end)
-
-    -- Public API
-    local SkinAPI = {}
-    function SkinAPI.SwitchSkin(skinId)
-        if not SkinDatabase[skinId] then return false end
-        CurrentSkin = skinId
-        if IsEnabled then return LoadAnimationPool(skinId) end
-        return true
-    end
-
-    function SkinAPI.Enable()
-        if IsEnabled then return false end
-        if not CurrentSkin then return false end
-        local success = LoadAnimationPool(CurrentSkin)
-        if success then
-            IsEnabled = true
-            killedTracks = {}
-            replaceCount = 0
-            return true
-        end
-        return false
-    end
-
-    function SkinAPI.Disable()
-        if not IsEnabled then return false end
-        IsEnabled = false
-        killedTracks = {}
-        replaceCount = 0
-        for _, track in ipairs(AnimationPool) do
-            pcall(function() track:Stop(0) end)
-        end
-        return true
-    end
-
-    function SkinAPI.IsEnabled() return IsEnabled end
-    function SkinAPI.GetCurrentSkin() return CurrentSkin end
-    function SkinAPI.GetReplaceCount() return replaceCount end
-
-    return SkinAPI
-end)()
-
--- UI di Tab3
-Tab3:Dropdown({
-    Title = "Pilih Custom Skin",
-    Values = {"Eclipse", "HolyTrident", "SoulScythe", "OceanicHarpoon", "BinaryEdge", "Vanquisher", "KrampusScythe", "BanHammer", "CorruptionEdge", "PrincessParasol"},
-    Value = "Eclipse",  -- default
-    Callback = function(selected)
-        local success = SkinAnimation.SwitchSkin(selected)
-        WindUI:Notify({
-            Title = "Skin Animation",
-            Content = success and "Skin diubah ke: " .. selected or "Gagal load skin!",
-            Duration = 3
-        })
-    end
-})
-
-Tab3:Toggle({
-    Title = "Enable Custom Skin Animation",
-    Value = false,
-    Callback = function(state)
-        local success
-        if state then
-            success = SkinAnimation.Enable()
-        else
-            success = SkinAnimation.Disable()
-        end
-        
-        WindUI:Notify({
-            Title = "Skin Animation",
-            Content = state and (success and "Aktif - Animasi fish caught diganti!" or "Gagal aktifkan!") 
-                     or "Dimatikan",
-            Duration = 4
-        })
-    end
-})
-
-Tab3:Divider()
-
 
 Tab3:Section({
     Title = "Auto Sell Fish",
@@ -2115,8 +1821,6 @@ if isMobile then
 end
 
 Tab3:Divider()
-
-
 
 -- === TAB 4: AUTOMATION (MODIFIED) ===
 local Tab4 = Window:Tab({
@@ -3730,27 +3434,329 @@ Tab8:Toggle({
 
 Tab8:Divider()
 
+-- =============================================
+-- CONFIG MANAGEMENT - NOXIUS HUB
+-- =============================================
+local CONFIG_FOLDER = "NoxiusConfigs"
+local AUTOLOAD_FILE = CONFIG_FOLDER .. "/autoload.txt"
+
+-- Buat folder kalau belum ada
+if not isfolder(CONFIG_FOLDER) then makefolder(CONFIG_FOLDER) end
+
+-- Get list of saved config files
+local function getConfigList()
+    local configs = {}
+    if isfolder(CONFIG_FOLDER) then
+        for _, file in ipairs(listfiles(CONFIG_FOLDER)) do
+            if file:lower():endswith(".json") then
+                local name = file:match("[^/\\]+%.json$"):gsub("%.json$", "")
+                if name ~= "config" and name ~= "mutation_config" and name ~= "rarity_config" and name ~= "rarity_wh_config" then
+                    table.insert(configs, name)
+                end
+            end
+        end
+    end
+    table.sort(configs)
+    return #configs > 0 and configs or {"(No saved configs)"}
+end
+
+-- Save Config table ke file named
+local function saveNamedConfig(name)
+    local sanitizedName = name:gsub("[^%w%s%-_]", ""):gsub("%s+", "_")
+    if sanitizedName == "" then return false, "Empty name" end
+    
+    local filePath = CONFIG_FOLDER .. "/" .. sanitizedName .. ".json"
+    
+    -- Clone Config table (deep copy untuk nested table UB)
+    local configData = {}
+    for k, v in pairs(Config) do
+        if type(v) == "table" then
+            configData[k] = {}
+            for k2, v2 in pairs(v) do
+                configData[k][k2] = v2
+            end
+        else
+            configData[k] = v
+        end
+    end
+    
+    local success, encoded = pcall(HttpService.JSONEncode, HttpService, configData)
+    if not success then return false, "JSON encode failed" end
+    
+    writefile(filePath, encoded)
+    return true, sanitizedName
+end
+
+-- Load named config dan apply ke Config table
+local function loadNamedConfig(name)
+    local filePath = CONFIG_FOLDER .. "/" .. name .. ".json"
+    if not isfile(filePath) then return false, "File not found" end
+    
+    local success, content = pcall(readfile, filePath)
+    if not success then return false, "Read failed" end
+    
+    local ok, data = pcall(HttpService.JSONDecode, HttpService, content)
+    if not ok or typeof(data) ~= "table" then return false, "Invalid JSON" end
+    
+    -- Apply ke Config table (hanya field yang ada)
+    for k, v in pairs(data) do
+        if Config[k] ~= nil then
+            if type(Config[k]) == "table" and type(v) == "table" then
+                for k2, v2 in pairs(v) do
+                    Config[k][k2] = v2
+                end
+            else
+                Config[k] = v
+            end
+        end
+    end
+    
+    return true, nil
+end
+
+-- Autoload functions
+local function setAutoloadConfig(name)
+    writefile(AUTOLOAD_FILE, name)
+end
+
+local function getAutoloadConfig()
+    if isfile(AUTOLOAD_FILE) then
+        local content = readfile(AUTOLOAD_FILE)
+        return content ~= "" and content or nil
+    end
+    return nil
+end
+
+local function clearAutoloadConfig()
+    if isfile(AUTOLOAD_FILE) then delfile(AUTOLOAD_FILE) end
+end
+
+-- Delete config file
+local function deleteNamedConfig(name)
+    local filePath = CONFIG_FOLDER .. "/" .. name .. ".json"
+    if isfile(filePath) then
+        delfile(filePath)
+        return true, nil
+    end
+    return false, "Config not found"
+end
+
+
+-- =============================================
+-- TAB 9: CONFIG MANAGEMENT
+-- =============================================
 local Tab9 = Window:Tab({
     Title = "Config",
     Icon = "rbxassetid://116263464348976",
 })
 
 Tab9:Section({
-    Title = "Save for Autoload",
+    Title = "Config Management",
     Icon = "save",
 })
 
--- Fungsi getRootPart persis dari kode kamu
+-- Variables
+local configNameInput = ""
+local configDropdown = nil
+local selectedConfigToLoad = ""
+
+-- Initialize
+local savedConfigs = getConfigList()
+selectedConfigToLoad = savedConfigs[1] or ""
+
+-- Dropdown: Select Config
+configDropdown = Tab9:Dropdown({
+    Title = "Select Saved Config",
+    Description = "Pilih config untuk load/delete/set autoload",
+    Values = savedConfigs,
+    Multi = false,
+    AllowNone = true,
+    Default = selectedConfigToLoad ~= "(No saved configs)" and selectedConfigToLoad or nil,
+    Callback = function(selected)
+        selectedConfigToLoad = selected or ""
+    end
+})
+
+-- Input: New Config Name
+Tab9:Input({
+    Title = "New Config Name",
+    Placeholder = "Contoh: AFK Farm Spot 1",
+    Callback = function(text)
+        configNameInput = text:match("^%s*(.-)%s*$") -- trim
+    end
+})
+
+-- Button: Save Config
+Tab9:Button({
+    Title = "💾 Save Current Config",
+    Description = "Simpan semua settings Config table ke file",
+    Callback = function()
+        local finalName = configNameInput ~= "" and configNameInput or selectedConfigToLoad
+        if finalName == "" or finalName == "(No saved configs)" then
+            WindUI:Notify({Title = "✗ Error", Content = "Config name tidak boleh kosong!", Duration = 3})
+            return
+        end
+        
+        -- Sanitize name
+        local sanitizedName = finalName:gsub("[^%w%s%-_]", ""):gsub("%s+", "_")
+        if sanitizedName == "" then
+            WindUI:Notify({Title = "✗ Error", Content = "Nama config invalid!", Duration = 3})
+            return
+        end
+        
+        -- Save main config files dulu (posisi, rarity, dll)
+        SaveAllConfig()
+        
+        -- Save named config
+        local success, result = saveNamedConfig(sanitizedName)
+        if success then
+            WindUI:Notify({
+                Title = "✓ Success",
+                Content = "Config '" .. result .. "' saved!",
+                Duration = 3
+            })
+            -- Refresh dropdown
+            if configDropdown and configDropdown.Refresh then
+                configDropdown:Refresh(getConfigList())
+            end
+        else
+            WindUI:Notify({
+                Title = "✗ Error",
+                Content = "Failed to save: " .. (result or "Unknown"),
+                Duration = 4
+            })
+        end
+    end
+})
+
+-- Button: Load Config
+Tab9:Button({
+    Title = "📂 Load Selected Config",
+    Description = "Load config terpilih ke Config table",
+    Callback = function()
+        if not selectedConfigToLoad or selectedConfigToLoad == "" or selectedConfigToLoad == "(No saved configs)" then
+            WindUI:Notify({Title = "✗ Error", Content = "Pilih config dulu dari dropdown!", Duration = 3})
+            return
+        end
+        
+        local success, err = loadNamedConfig(selectedConfigToLoad)
+        if success then
+            -- Save ke main config.json juga biar persist
+            SaveConfig(1)
+            
+            WindUI:Notify({
+                Title = "✓ Success",
+                Content = "Config '" .. selectedConfigToLoad .. "' loaded!",
+                Duration = 3
+            })
+            
+            -- Optional: Refresh UI elements kalau WindUI support
+            -- Contoh manual refresh untuk beberapa toggle penting:
+            -- if someToggle and Config.AutoCatch then someToggle:Set(Config.AutoCatch) end
+        else
+            WindUI:Notify({
+                Title = "✗ Error",
+                Content = "Failed to load: " .. (err or "Unknown"),
+                Duration = 4
+            })
+        end
+    end
+})
+
+-- Button: Refresh List
+Tab9:Button({
+    Title = "🔄 Refresh Config List",
+    Description = "Update daftar saved configs",
+    Callback = function()
+        if configDropdown and configDropdown.Refresh then
+            configDropdown:Refresh(getConfigList())
+            WindUI:Notify({Title = "Refreshed", Content = "Config list updated!", Duration = 2})
+        end
+    end
+})
+
+-- Button: Set as Autoload
+Tab9:Button({
+    Title = "⭐ Set as Autoload",
+    Description = "Config ini auto-load tiap script jalan",
+    Callback = function()
+        if not selectedConfigToLoad or selectedConfigToLoad == "" or selectedConfigToLoad == "(No saved configs)" then
+            WindUI:Notify({Title = "✗ Error", Content = "Pilih config dulu!", Duration = 3})
+            return
+        end
+        setAutoloadConfig(selectedConfigToLoad)
+        WindUI:Notify({
+            Title = "✓ Success",
+            Content = "Autoload set to: " .. selectedConfigToLoad,
+            Duration = 3
+        })
+    end
+})
+
+-- Button: Remove Autoload
+Tab9:Button({
+    Title = "❌ Remove Autoload",
+    Description = "Matikan auto-load config",
+    Callback = function()
+        clearAutoloadConfig()
+        WindUI:Notify({
+            Title = "✓ Success",
+            Content = "Autoload config removed",
+            Duration = 3
+        })
+    end
+})
+
+-- Button: Delete Config
+Tab9:Button({
+    Title = "🗑️ Delete Selected Config",
+    Description = "Hapus config permanen",
+    Callback = function()
+        if not selectedConfigToLoad or selectedConfigToLoad == "" or selectedConfigToLoad == "(No saved configs)" then
+            WindUI:Notify({Title = "✗ Error", Content = "Pilih config dulu!", Duration = 3})
+            return
+        end
+        
+        local success, err = deleteNamedConfig(selectedConfigToLoad)
+        if success then
+            WindUI:Notify({
+                Title = "✓ Success",
+                Content = "Config '" .. selectedConfigToLoad .. "' deleted!",
+                Duration = 3
+            })
+            selectedConfigToLoad = ""
+            if configDropdown and configDropdown.Refresh then
+                configDropdown:Refresh(getConfigList())
+            end
+        else
+            WindUI:Notify({
+                Title = "✗ Error",
+                Content = "Failed to delete: " .. (err or "Unknown"),
+                Duration = 4
+            })
+        end
+    end
+})
+
+Tab9:Divider()
+
+-- Section: Position Save (tetap ada)
+Tab9:Section({
+    Title = "Position Manager",
+    Icon = "navigation",
+})
+
+-- Fungsi getRootPart
 local function getRootPart()
     local character = LocalPlayer.Character
     if not character then return end
-    local rootPart = character:FindFirstChild("HumanoidRootPart")
-    return rootPart
+    return character:FindFirstChild("HumanoidRootPart")
 end
 
+-- Toggle: Save Position for Autoload
 Tab9:Toggle({
-    Title = "Save Position",
-    Description = "Simpan posisi saat ini untuk autoload",
+    Title = "Save Position for Autoload",
+    Description = "Simpan posisi saat ini untuk auto-load",
     Default = Config.savePosition,
     Callback = function(Value)
         Config.savePosition = Value
@@ -3759,59 +3765,112 @@ Tab9:Toggle({
             if rootPart then
                 local cf = rootPart.CFrame
                 Config.position = string.format(
-                    "CFrame.new(%f, %f, %f)",
-                    cf.Position.X,
-                    cf.Position.Y,
-                    cf.Position.Z
+                    "CFrame.new(%f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f)",
+                    cf.X, cf.Y, cf.Z,
+                    cf.RightVector.X, cf.RightVector.Y, cf.RightVector.Z,
+                    cf.UpVector.X, cf.UpVector.Y, cf.UpVector.Z,
+                    cf.LookVector.X, cf.LookVector.Y, cf.LookVector.Z
                 )
-                print("Position saved: " .. Config.position)
-            else
-                print("RootPart tidak ditemukan saat save position")
+                SaveConfig(1)
+                print("✅ Position saved: " .. Config.position)
             end
+        end
+        SaveConfig(1)
+    end
+})
+
+-- Button: Save Position Now
+Tab9:Button({
+    Title = "💾 Save Position Now",
+    Description = "Simpan posisi saat ini manual",
+    Callback = function()
+        local rootPart = getRootPart()
+        if rootPart then
+            local cf = rootPart.CFrame
+            Config.position = string.format(
+                "CFrame.new(%f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f)",
+                cf.X, cf.Y, cf.Z,
+                cf.RightVector.X, cf.RightVector.Y, cf.RightVector.Z,
+                cf.UpVector.X, cf.UpVector.Y, cf.UpVector.Z,
+                cf.LookVector.X, cf.LookVector.Y, cf.LookVector.Z
+            )
+            Config.savePosition = true
+            SaveConfig(1)
+            WindUI:Notify({
+                Title = "Position Saved",
+                Content = "Posisi berhasil disimpan!",
+                Duration = 3
+            })
+        else
+            WindUI:Notify({
+                Title = "Error",
+                Content = "HumanoidRootPart tidak ditemukan!",
+                Duration = 3
+            })
         end
     end
 })
 
--- Auto load position kalau config true (persis dari kode kamu)
-if Config.savePosition then
-    print("config position")
-    print(Config.position)
-    local rootpart = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if rootpart and Config.position and Config.position ~= "" then
-        local success, cf = pcall(function()
-            return loadstring("return " .. Config.position)()
-        end)
-        if success and cf then
-            print("cf loaded")
-            print(cf)
-            rootpart.CFrame = cf
+-- Button: Test Load Position
+Tab9:Button({
+    Title = "🧪 Test Load Position",
+    Description = "Coba load posisi tersimpan",
+    Callback = function()
+        if Config.position and Config.position ~= "" then
+            local rootpart = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if rootpart then
+                local success, cf = pcall(function()
+                    return loadstring("return " .. Config.position)()
+                end)
+                if success and cf and typeof(cf) == "CFrame" then
+                    task.wait(0.3)
+                    rootpart.CFrame = cf + Vector3.new(0, 3, 0)
+                    WindUI:Notify({
+                        Title = "Position Loaded",
+                        Content = "Berhasil teleport!",
+                        Duration = 3
+                    })
+                else
+                    WindUI:Notify({Title = "Error", Content = "Gagal load CFrame!", Duration = 3})
+                end
+            end
         else
-            print("Gagal load position dari config")
+            WindUI:Notify({Title = "Info", Content = "Belum ada posisi tersimpan!", Duration = 3})
         end
     end
-end
+})
+
+Tab9:Divider()
+
+-- Section: Info
+Tab9:Section({
+    Title = "Info",
+    Icon = "info",
+})
+
+Tab9:Paragraph({
+    Title = "Current Active Config",
+    Content = "Gunakan dropdown di atas untuk manage config"
+})
 
 Tab9:Button({
-    Title = "Save Config",
-    Description = "Simpan semua konfigurasi saat ini",
+    Title = "Show Current Config Values",
+    Description = "Print Config table ke console",
     Callback = function()
-        if Config.savePosition then
-            local rootPart = getRootPart()
-            if rootPart then
-                local cf = rootPart.CFrame
-                Config.position = string.format(
-                    "CFrame.new(%f, %f, %f)",
-                    cf.Position.X,
-                    cf.Position.Y,
-                    cf.Position.Z
-                )
-                print("Position updated before save: " .. Config.position)
+        print("=== CURRENT CONFIG ===")
+        for k, v in pairs(Config) do
+            if type(v) ~= "table" then
+                print(k .. " = " .. tostring(v))
             end
         end
-        SaveAllConfig()
+        if Config.UB then
+            print("UB.Active = " .. tostring(Config.UB.Active))
+            print("UB.Settings.CompleteDelay = " .. tostring(Config.UB.Settings.CompleteDelay))
+            print("UB.Settings.CancelDelay = " .. tostring(Config.UB.Settings.CancelDelay))
+        end
         WindUI:Notify({
-            Title = "Config",
-            Content = "Semua konfigurasi telah disimpan!",
+            Title = "Config Printed",
+            Content = "Cek console untuk detail Config table",
             Duration = 3
         })
     end
@@ -5038,3 +5097,351 @@ Tab10:Toggle({
 
 Tab10:Divider()
 
+-- =============================================
+-- CUSTOM SKIN ANIMATION (Replace Fish Caught Anim)
+-- =============================================
+
+Tab10:Section({
+    Title = "Custom Skin Animation",
+    Icon = "sparkles",
+    TextXAlignment = "Left",
+    TextSize = 17 
+})
+
+Tab10:Divider()
+
+-- Load module SkinAnimation (kode lo full)
+local SkinAnimation = (function()
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local player = Players.LocalPlayer
+    local char = player.Character or player.CharacterAdded:Wait()
+    local humanoid = char:WaitForChild("Humanoid")
+
+    local Animator = humanoid:FindFirstChildOfClass("Animator")
+    if not Animator then
+        Animator = Instance.new("Animator", humanoid)
+    end
+
+    -- SKIN DATABASE
+    local SkinDatabase = {
+        ["Eclipse"] = "rbxassetid://107940819382815",
+        ["HolyTrident"] = "rbxassetid://128167068291703",
+        ["SoulScythe"] = "rbxassetid://82259219343456",
+        ["OceanicHarpoon"] = "rbxassetid://76325124055693",
+        ["BinaryEdge"] = "rbxassetid://109653945741202",
+        ["Vanquisher"] = "rbxassetid://93884986836266",
+        ["KrampusScythe"] = "rbxassetid://134934781977605",
+        ["BanHammer"] = "rbxassetid://96285280763544",
+        ["CorruptionEdge"] = "rbxassetid://126613975718573",
+        ["PrincessParasol"] = "rbxassetid://99143072029495"
+    }
+
+    local CurrentSkin = nil
+    local AnimationPool = {}
+    local IsEnabled = false
+    local POOL_SIZE = 3
+
+    local killedTracks = {}
+    local replaceCount = 0
+    local currentPoolIndex = 1
+
+    -- Load Animation Pool
+    local function LoadAnimationPool(skinId)
+        local animId = SkinDatabase[skinId]
+        if not animId then return false end
+        
+        -- Clear old pool
+        for _, track in ipairs(AnimationPool) do
+            pcall(function()
+                track:Stop(0)
+                track:Destroy()
+            end)
+        end
+        AnimationPool = {}
+        
+        local anim = Instance.new("Animation")
+        anim.AnimationId = animId
+        anim.Name = "CUSTOM_SKIN_ANIM"
+        
+        for i = 1, POOL_SIZE do
+            local track = Animator:LoadAnimation(anim)
+            track.Priority = Enum.AnimationPriority.Action4
+            track.Looped = false
+            track.Name = "SKIN_POOL_" .. i
+            
+            task.spawn(function()
+                pcall(function()
+                    track:Play(0, 1, 0)
+                    task.wait(0.05)
+                    track:Stop(0)
+                end)
+            end)
+            
+            table.insert(AnimationPool, track)
+        end
+        
+        currentPoolIndex = 1
+        return true
+    end
+
+    local function GetNextTrack()
+        for i = 1, POOL_SIZE do
+            local track = AnimationPool[i]
+            if track and not track.IsPlaying then
+                return track
+            end
+        end
+        
+        currentPoolIndex = currentPoolIndex % POOL_SIZE + 1
+        return AnimationPool[currentPoolIndex]
+    end
+
+    local function IsFishCaughtAnimation(track)
+        if not track or not track.Animation then return false end
+        
+        local trackName = string.lower(track.Name or "")
+        local animName = string.lower(track.Animation.Name or "")
+        
+        if string.find(trackName, "fishcaught") or 
+           string.find(animName, "fishcaught") or
+           string.find(trackName, "caught") or 
+           string.find(animName, "caught") then
+            return true
+        end
+        
+        return false
+    end
+
+    local function InstantReplace(originalTrack)
+        local nextTrack = GetNextTrack()
+        if not nextTrack then return end
+        
+        replaceCount = replaceCount + 1
+        killedTracks[originalTrack] = tick()
+        
+        task.spawn(function()
+            for i = 1, 10 do
+                pcall(function()
+                    if originalTrack.IsPlaying then
+                        originalTrack:Stop(0)
+                        originalTrack:AdjustSpeed(0)
+                        originalTrack.TimePosition = 0
+                    end
+                end)
+                task.wait()
+            end
+        end)
+        
+        pcall(function()
+            if nextTrack.IsPlaying then nextTrack:Stop(0) end
+            nextTrack:Play(0, 1, 1)
+            nextTrack:AdjustSpeed(1)
+        end)
+        
+        task.delay(1, function()
+            killedTracks[originalTrack] = nil
+        end)
+    end
+
+    -- Hooks
+    humanoid.AnimationPlayed:Connect(function(track)
+        if not IsEnabled then return end
+        if IsFishCaughtAnimation(track) then
+            task.spawn(function()
+                InstantReplace(track)
+            end)
+        end
+    end)
+
+    RunService.RenderStepped:Connect(function()
+        if not IsEnabled then return end
+        
+        local tracks = humanoid:GetPlayingAnimationTracks()
+        for _, track in ipairs(tracks) do
+            if string.find(string.lower(track.Name or ""), "skin_pool") then continue end
+            
+            if killedTracks[track] then
+                if track.IsPlaying then
+                    pcall(function()
+                        track:Stop(0)
+                        track:AdjustSpeed(0)
+                    end)
+                end
+                continue
+            end
+            
+            if track.IsPlaying and IsFishCaughtAnimation(track) then
+                task.spawn(function()
+                    InstantReplace(track)
+                end)
+            end
+        end
+    end)
+
+    RunService.Heartbeat:Connect(function()
+        if not IsEnabled then return end
+        
+        local tracks = humanoid:GetPlayingAnimationTracks()
+        for _, track in ipairs(tracks) do
+            if string.find(string.lower(track.Name or ""), "skin_pool") then continue end
+            
+            if killedTracks[track] and track.IsPlaying then
+                pcall(function()
+                    track:Stop(0)
+                    track:AdjustSpeed(0)
+                end)
+            end
+        end
+    end)
+
+    RunService.Stepped:Connect(function()
+        if not IsEnabled then return end
+        
+        for track, _ in pairs(killedTracks) do
+            if track and track.IsPlaying then
+                pcall(function()
+                    track:Stop(0)
+                    track:AdjustSpeed(0)
+                end)
+            end
+        end
+    end)
+
+    player.CharacterAdded:Connect(function(newChar)
+        task.wait(1.5)
+        char = newChar
+        humanoid = char:WaitForChild("Humanoid")
+        Animator = humanoid:FindFirstChildOfClass("Animator")
+        if not Animator then Animator = Instance.new("Animator", humanoid) end
+        
+        killedTracks = {}
+        replaceCount = 0
+        
+        if IsEnabled and CurrentSkin then
+            task.wait(0.5)
+            LoadAnimationPool(CurrentSkin)
+        end
+    end)
+
+    -- Public API
+    local SkinAPI = {}
+    function SkinAPI.SwitchSkin(skinId)
+        if not SkinDatabase[skinId] then return false end
+        CurrentSkin = skinId
+        if IsEnabled then return LoadAnimationPool(skinId) end
+        return true
+    end
+
+    function SkinAPI.Enable()
+        if IsEnabled then return false end
+        if not CurrentSkin then return false end
+        local success = LoadAnimationPool(CurrentSkin)
+        if success then
+            IsEnabled = true
+            killedTracks = {}
+            replaceCount = 0
+            return true
+        end
+        return false
+    end
+
+    function SkinAPI.Disable()
+        if not IsEnabled then return false end
+        IsEnabled = false
+        killedTracks = {}
+        replaceCount = 0
+        for _, track in ipairs(AnimationPool) do
+            pcall(function() track:Stop(0) end)
+        end
+        return true
+    end
+
+    function SkinAPI.IsEnabled() return IsEnabled end
+    function SkinAPI.GetCurrentSkin() return CurrentSkin end
+    function SkinAPI.GetReplaceCount() return replaceCount end
+
+    return SkinAPI
+end)()
+
+-- UI di Tab10
+Tab10:Dropdown({
+    Title = "Pilih Custom Skin",
+    Values = {"Eclipse", "HolyTrident", "SoulScythe", "OceanicHarpoon", "BinaryEdge", "Vanquisher", "KrampusScythe", "BanHammer", "CorruptionEdge", "PrincessParasol"},
+    Value = "Eclipse",  -- default
+    Callback = function(selected)
+        local success = SkinAnimation.SwitchSkin(selected)
+        WindUI:Notify({
+            Title = "Skin Animation",
+            Content = success and "Skin diubah ke: " .. selected or "Gagal load skin!",
+            Duration = 3
+        })
+    end
+})
+
+Tab10:Toggle({
+    Title = "Enable Custom Skin Animation",
+    Value = false,
+    Callback = function(state)
+        local success
+        if state then
+            success = SkinAnimation.Enable()
+        else
+            success = SkinAnimation.Disable()
+        end
+        
+        WindUI:Notify({
+            Title = "Skin Animation",
+            Content = state and (success and "Aktif - Animasi fish caught diganti!" or "Gagal aktifkan!") 
+                     or "Dimatikan",
+            Duration = 4
+        })
+    end
+})
+
+Tab10:Divider()
+
+
+-- =============================================
+-- AUTOLOAD CONFIG ON STARTUP
+-- =============================================
+task.defer(function()
+    -- Tunggu Config & UI ready
+    task.wait(2)
+    
+    local autoloadName = getAutoloadConfig()
+    if autoloadName and autoloadName ~= "" then
+        print("[Noxius] 🔄 Autoloading config: " .. autoloadName)
+        
+        local success, err = loadNamedConfig(autoloadName)
+        if success then
+            -- Save ke main config.json juga
+            SaveConfig(1)
+            
+            -- Auto-load position kalau enable
+            if Config.savePosition and Config.position and Config.position ~= "" then
+                task.wait(1)
+                local rootpart = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if rootpart then
+                    local ok, cf = pcall(function()
+                        return loadstring("return " .. Config.position)()
+                    end)
+                    if ok and cf and typeof(cf) == "CFrame" then
+                        task.wait(0.3)
+                        rootpart.CFrame = cf + Vector3.new(0, 3, 0)
+                        print("✅ Auto-loaded position from config")
+                    end
+                end
+            end
+            
+            WindUI:Notify({
+                Title = "🔁 Autoload",
+                Content = "Loaded config: " .. autoloadName,
+                Duration = 5,
+                Icon = "check-circle"
+            })
+        else
+            warn("[Noxius] ⚠️ Failed to autoload: " .. tostring(err))
+        end
+    end
+end)
