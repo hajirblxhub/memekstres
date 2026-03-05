@@ -2214,7 +2214,7 @@ local function runMultiEventTP()
                 createAndTeleportToPlatform(foundPos, config.PlatformY)
             end
         end
-        task.wait(0.05)  -- loop cepat tapi aman
+        task.wait(0.05)
     end
     destroyEventPlatform()
 end
@@ -2257,8 +2257,6 @@ Tab4:Button({
         WindUI:Notify({Title = "Platform", Content = "Event platform dihapus", Duration = 2})
     end
 })
-
-Tab4:Divider()
 
 local Tab5 = Window:Tab({
     Title = "Farming",
