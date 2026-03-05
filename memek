@@ -2207,232 +2207,6 @@ Tab5:Toggle({
 
 Tab5:Divider()
 
--- ==========================================================
--- FITUR AUTO TRADE (TAB 5)
--- ==========================================================
-
-local trade = Tab5:Section({ Title = "Auto Trade", TextSize = 20})
-
--- Variabel Lokal Auto Trade
-local autoTradeState = false
-local autoTradeThread = nil
-local tradeHoldFavorite = false
-local selectedTradeTargetId = nil
-local selectedTradeItemName = nil
-local selectedTradeRarity = nil
-local tradeDelay = 1.0
-local tradeAmount = 0
-local tradeStopAtCoins = 0
-local isTradeByCoinActive = false
-
--- Player Target Dropdown
-local PlayerList = {}
-local function GetPlayerOptions()
-    local options = {}
-    PlayerList = {} 
-    for _, player in ipairs(game.Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            table.insert(options, player.Name)
-            PlayerList[player.Name] = player.UserId
-        end
-    end
-    return options
-end
-
-local PlayerDropdown
-PlayerDropdown = trade:Dropdown({
-    Title = "Pilih Pemain Target",
-    Values = GetPlayerOptions(),
-    Value = false,
-    Multi = false,
-    AllowNone = false,
-    Callback = function(name)
-        local player = game.Players:FindFirstChild(name)
-        if player and player.UserId then
-            selectedTradeTargetId = player.UserId
-            WindUI:Notify({ Title = "Target Dipilih", Content = "Target set: " .. player.Name, Duration = 2, Icon = "user" })
-        else
-            selectedTradeTargetId = nil
-        end
-    end
-})
-
-trade:Button({
-    Title = "Refresh Player List",
-    Icon = "refresh-ccw",
-    Callback = function()
-        local newOptions = GetPlayerOptions()
-        pcall(function() PlayerDropdown:Refresh(newOptions) end)
-        task.wait(0.05)
-        pcall(function() PlayerDropdown:Set(false) end)
-        selectedTradeTargetId = nil
-        WindUI:Notify({ Title = "List Diperbarui", Content = #newOptions .. " pemain ditemukan.", Duration = 2, Icon = "check" })
-    end
-})
-
-trade:Divider()
-
--- Item Populate
-local function getTradeableItemOptions()
-    local itemNames = {}
-    local itemsContainer = ReplicatedStorage:FindFirstChild("Items")
-    if not itemsContainer then return {"Error: Items Not Found"} end
-
-    for _, itemObject in ipairs(itemsContainer:GetChildren()) do
-        local itemName = itemObject.Name
-        if type(itemName) == "string" and #itemName >= 3 and itemName:sub(1, 3) ~= "!!!" then
-            table.insert(itemNames, itemName)
-        end
-    end
-    table.sort(itemNames)
-    return #itemNames == 0 and {"Empty"} or itemNames
-end
-
-trade:Dropdown({
-    Title = "Filter Item Name",
-    Values = getTradeableItemOptions(),
-    Value = false,
-    Multi = false,
-    AllowNone = true,
-    Callback = function(name) selectedTradeItemName = name or nil end
-})
-
-trade:Dropdown({
-    Title = "Filter Item Rarity",
-    Values = {"Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "SECRET", "Trophy", "Default"},
-    Value = false,
-    Multi = false,
-    AllowNone = true,
-    Callback = function(rarity) selectedTradeRarity = rarity or nil end
-})
-
-trade:Toggle({
-    Title = "Stop at Coin Amount",
-    Value = false,
-    Callback = function(state) isTradeByCoinActive = state end
-})
-
-trade:Input({
-    Title = "Target Coin Amount",
-    Placeholder = "1000000",
-    Value = "0",
-    Callback = function(val) tradeStopAtCoins = tonumber(val) or 0 end
-})
-
-trade:Input({
-    Title = "Trade Amount (0 = Unlimited)",
-    Value = "0",
-    Callback = function(input) tradeAmount = tonumber(input) or 0 end
-})
-
-trade:Slider({
-    Title = "Trade Delay (Seconds)",
-    Step = 0.1,
-    Value = { Min = 0.5, Max = 5.0, Default = 1.0 },
-    Callback = function(value) tradeDelay = tonumber(value) or 1.0 end
-})
-
--- LOGIC FUNCTIONS
-local function GetItemsToTrade()
-    local replion = GetPlayerDataReplion()
-    if not replion then return {} end
-    local success, inventoryData = pcall(function() return replion:GetExpect("Inventory") end)
-    if not success or not inventoryData.Items then return {} end
-
-    local itemsToTrade = {}
-    for _, item in ipairs(inventoryData.Items) do
-        if tradeHoldFavorite and (item.IsFavorite or item.Favorited) then continue end
-        if typeof(item.UUID) ~= "string" or item.UUID:len() < 10 then continue end
-        
-        local name, rarity = GetFishNameAndRarity(item)
-        local itemRarity = (rarity and rarity:upper() ~= "COMMON") and rarity or "Default"
-        
-        local passesRarity = not selectedTradeRarity or (selectedTradeRarity and itemRarity:upper() == selectedTradeRarity:upper())
-        local passesName = not selectedTradeItemName or (name == selectedTradeItemName)
-        
-        if passesRarity and passesName then
-            table.insert(itemsToTrade, { UUID = item.UUID, Name = name, Id = item.Id, Metadata = item.Metadata or {} })
-        end
-    end
-    return itemsToTrade
-end
-
-local function RunAutoTradeLoop()
-    if autoTradeThread then task.cancel(autoTradeThread) end
-    autoTradeThread = task.spawn(function()
-        local tradeCount = 0
-        local accumulatedValue = 0
-        local RF_InitiateTrade = GetServerRemote("RF/InitiateTrade")
-
-        while autoTradeState do
-            if not selectedTradeTargetId then break end
-            
-            -- Check Limits
-            if isTradeByCoinActive and tradeStopAtCoins > 0 and accumulatedValue >= tradeStopAtCoins then break end
-            if tradeAmount > 0 and tradeCount >= tradeAmount then break end
-
-            local items = GetItemsToTrade()
-            if #items > 0 then
-                local item = items[1]
-                
-                -- Calculate Price
-                local basePrice = 0
-                if ItemUtility then
-                    local iData = ItemUtility.GetItemData(item.Id)
-                    basePrice = iData and iData.SellPrice or 0
-                end
-                local value = math.floor(basePrice * (item.Metadata.SellMultiplier or 1))
-
-                -- Send Trade
-                local success = pcall(function() RF_InitiateTrade:InvokeServer(selectedTradeTargetId, item.UUID) end)
-                if success then
-                    tradeCount = tradeCount + 1
-                    accumulatedValue = accumulatedValue + value
-                    WindUI:Notify({ Title = "Trade Sent", Content = "Item: " .. item.Name .. " | Value: " .. value, Duration = 2 })
-                    task.wait(tradeDelay)
-                end
-            end
-            task.wait(1)
-        end
-    end)
-end
-
-trade:Toggle({
-    Title = "Hold Favorite Items",
-    Value = false,
-    Callback = function(state) tradeHoldFavorite = state end
-})
-
-trade:Toggle({
-    Title = "Enable Auto Trade",
-    Value = false,
-    Callback = function(state)
-        autoTradeState = state
-        if state then
-            if not selectedTradeTargetId then
-                WindUI:Notify({ Title = "Error", Content = "Pilih target dulu!", Duration = 3 })
-                return
-            end
-            -- Teleport to Target
-            local target = game.Players:GetPlayerByUserId(selectedTradeTargetId)
-            if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
-                LocalPlayer.Character.HumanoidRootPart.CFrame = target.Character.HumanoidRootPart.CFrame * CFrame.new(0, 5, 0)
-            end
-            RunAutoTradeLoop()
-        elseif autoTradeThread then
-            task.cancel(autoTradeThread)
-        end
-    end
-})
-
-trade:Toggle({
-    Title = "Enable Auto Accept Trade",
-    Value = false,
-    Callback = function(state) _G.RockHub_AutoAcceptTradeEnabled = state end
-})
-
-Tab5:Divider()
-
 local Tab6 = Window:Tab({
     Title = "Misc",
     Icon = "settings",
@@ -3647,7 +3421,7 @@ end)
 -- TAB 10: YTTA
 -- =============================================
 local Tab10 = Window:Tab({
-    Title = "YTTA",
+    Title = "NEW FITUR",
     Icon = "fish"
 })
 
@@ -5079,3 +4853,417 @@ Tab10:Toggle({
 })
 
 Tab10:Divider()
+
+local Tab11 = Window:Tab({
+    Title = "Favorite Trade",
+    Icon = "fish"
+})
+
+local Tab11 = Window:Tab({
+    Title = "Favorite Trade",
+    Icon = "fish"
+})
+
+-- =============================================
+-- AUTO TRADE SECTION (TAB 11)
+-- =============================================
+local trade = Tab11:Section({ Title = "Auto Trade", TextSize = 20 })
+
+-- Variabel Lokal Auto Trade
+local autoTradeState = false
+local autoTradeThread = nil
+local tradeHoldFavorite = false
+local selectedTradeTargetId = nil
+local selectedTradeItemName = nil
+local selectedTradeRarity = nil
+local tradeDelay = 1.0
+local tradeAmount = 0
+local tradeStopAtCoins = 0
+local isTradeByCoinActive = false
+
+-- Remote Initialization (Menggunakan sistem Event script utama)
+local RF_InitiateTrade = GetServerRemote("RF/InitiateTrade")
+
+-- Player Target Dropdown
+local PlayerList = {}
+local function GetPlayerOptions()
+    local options = {}
+    PlayerList = {} -- Reset mapping ID
+    for _, player in ipairs(game.Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(options, player.Name)
+            PlayerList[player.Name] = player.UserId
+        end
+    end
+    return options
+end
+
+local PlayerDropdown
+PlayerDropdown = trade:Dropdown({
+    Title = "Pilih Pemain Target",
+    Values = GetPlayerOptions(),
+    Value = false,
+    Multi = false,
+    AllowNone = false,
+    Callback = function(name)
+        local player = game.Players:FindFirstChild(name)
+        if player and player.UserId then
+            selectedTradeTargetId = player.UserId
+            WindUI:Notify({ Title = "Target Dipilih", Content = "Target set: " .. player.Name, Duration = 2, Icon = "user" })
+        else
+            selectedTradeTargetId = nil
+        end
+    end
+})
+
+local listplay = trade:Button({
+    Title = "Refresh Player List",
+    Icon = "refresh-ccw",
+    Callback = function()
+        local newOptions = GetPlayerOptions()
+        pcall(function() PlayerDropdown:Refresh(newOptions) end)
+        task.wait(0.05)
+        pcall(function() PlayerDropdown:Set(false) end)
+        selectedTradeTargetId = nil
+        if #newOptions > 0 then
+            WindUI:Notify({ Title = "List Diperbarui", Content = string.format("%d pemain ditemukan.", #newOptions), Duration = 2, Icon = "check" })
+        else
+            WindUI:Notify({ Title = "List Diperbarui", Content = "Tidak ada pemain lain di server.", Duration = 2, Icon = "check" })
+        end
+    end
+})
+
+Tab11:Divider()
+
+-- 1. Item Auto-Populate Dropdown
+local function getTradeableItemOptions()
+    local itemNames = {}
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local itemsContainer = ReplicatedStorage:FindFirstChild("Items")
+
+    if not itemsContainer then
+        return {"(Kontainer 'Items' di ReplicatedStorage Tidak Ditemukan)"}
+    end
+
+    for _, itemObject in ipairs(itemsContainer:GetChildren()) do
+        local itemName = itemObject.Name
+        if type(itemName) == "string" and #itemName >= 3 then
+            local prefix = itemName:sub(1, 3)
+            if prefix ~= "!!!" then
+                table.insert(itemNames, itemName)
+            end
+        end
+    end
+
+    table.sort(itemNames)
+    if #itemNames == 0 then
+        return {"(Kontainer 'Items' Kosong atau Semua Item '!!!')"}
+    end
+    return itemNames
+end
+
+local ItemNameDropdown
+ItemNameDropdown = trade:Dropdown({
+    Title = "Filter Item Name",
+    Values = getTradeableItemOptions(),
+    Value = false,
+    Multi = false,
+    AllowNone = true,
+    Callback = function(name)
+        selectedTradeItemName = name or nil
+    end
+})
+
+-- 2. Filter Rarity Dropdown
+local raretrade = trade:Dropdown({
+    Title = "Filter Item Rarity",
+    Values = {"Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "SECRET", "Trophy", "Collectible", "DEV", "Default"},
+    Value = false,
+    Multi = false,
+    AllowNone = true,
+    Callback = function(rarity)
+        selectedTradeRarity = rarity or nil
+    end
+})
+
+local ToggleCoinStop = trade:Toggle({
+    Title = "Stop at Coin Amount",
+    Desc = "Berhenti trade jika koin mencapai target.",
+    Value = false,
+    Callback = function(state) isTradeByCoinActive = state end
+})
+
+local inputcoint = trade:Input({
+    Title = "Target Coin Amount",
+    Placeholder = "1000000",
+    Value = "0",
+    Icon = "dollar-sign",
+    Callback = function(val)
+        tradeStopAtCoins = tonumber(val) or 0
+    end
+})
+
+-- 3. Limit Trade Input (Amount)
+local InputAmount = trade:Input({
+    Title = "Trade Amount (0 = Unlimited)",
+    Value = tostring(tradeAmount),
+    Placeholder = "0 (Unlimited)",
+    Icon = "hash",
+    Callback = function(input)
+        local newAmount = tonumber(input)
+        if newAmount == nil or newAmount < 0 then
+            tradeAmount = 0
+        else
+            tradeAmount = math.floor(newAmount)
+        end
+    end
+})
+
+-- 4. Trade Delay Slider
+local DelaySlider = trade:Slider({
+    Title = "Trade Delay (Seconds)",
+    Step = 0.1,
+    Value = { Min = 0.5, Max = 5.0, Default = tradeDelay },
+    Callback = function(value)
+        local newDelay = tonumber(value)
+        if newDelay and newDelay >= 0.5 then
+            tradeDelay = newDelay
+        else
+            tradeDelay = 1.0
+        end
+    end
+})
+
+local function GetItemsToTrade()
+    local replion = GetPlayerDataReplion()
+    if not replion then return {} end
+
+    local success, inventoryData = pcall(function() return replion:GetExpect("Inventory") end)
+    if not success or not inventoryData or not inventoryData.Items then return {} end
+
+    local itemsToTrade = {}
+    
+    for _, item in ipairs(inventoryData.Items) do
+        local isFavorited = item.IsFavorite or item.Favorited
+        if tradeHoldFavorite and isFavorited then
+            continue 
+        end
+        
+        if typeof(item.UUID) ~= "string" or item.UUID:len() < 10 then continue end
+        
+        local name, rarity = GetFishNameAndRarity(item)
+        local itemRarity = (rarity and rarity:upper() ~= "COMMON") and rarity or "Default"
+        
+        local passesRarity = not selectedTradeRarity or (selectedTradeRarity and itemRarity:upper() == selectedTradeRarity:upper())
+        local passesName = not selectedTradeItemName or (name == selectedTradeItemName)
+        
+        if passesRarity and passesName then
+            table.insert(itemsToTrade, { 
+                UUID = item.UUID, 
+                Name = name, 
+                Rarity = rarity, 
+                Identifier = item.Identifier,
+                Id = item.Id,
+                Metadata = item.Metadata or {}
+            })
+        end
+    end
+    return itemsToTrade
+end
+
+local function IsItemStillInInventory(targetUUID)
+    local replion = GetPlayerDataReplion()
+    if not replion then return true end
+    
+    local success, inventoryData = pcall(function() return replion:GetExpect("Inventory") end)
+    if not success or not inventoryData or not inventoryData.Items then return true end
+
+    for _, item in ipairs(inventoryData.Items) do
+        if item.UUID == targetUUID then
+            return true
+        end
+    end
+    return false
+end
+
+local function RunAutoTradeLoop()
+    if autoTradeThread then task.cancel(autoTradeThread) end
+    
+    autoTradeThread = task.spawn(function()
+        local tradeCount = 0
+        local accumulatedValue = 0
+        local targetId = selectedTradeTargetId
+        
+        if not targetId or typeof(targetId) ~= "number" then
+            WindUI:Notify({ Title = "Trade Gagal", Content = "Pilih Target valid.", Duration = 5, Icon = "x" })
+            if autotrd then autotrd:Set(false) end
+            return
+        end
+
+        -- Pastikan Remote ada (Event Check)
+        local RF_InitiateTrade_Local = RF_InitiateTrade or GetServerRemote("RF/InitiateTrade")
+        if not RF_InitiateTrade_Local then 
+            WindUI:Notify({ Title = "Error", Content = "Remote Trade tidak ditemukan!", Duration = 5 })
+            if autotrd then autotrd:Set(false) end
+            return 
+        end
+
+        WindUI:Notify({ Title = "Auto Trade ON", Content = "Tracking Value dimulai (0/"..tradeStopAtCoins..")", Duration = 2, Icon = "zap" })
+
+        while autoTradeState do
+            if isTradeByCoinActive and tradeStopAtCoins > 0 then
+                if accumulatedValue >= tradeStopAtCoins then
+                    WindUI:Notify({ 
+                        Title = "Target Value Tercapai!", 
+                        Content = string.format("Total Trade: %s coins.", accumulatedValue), 
+                        Duration = 5, 
+                        Icon = "dollar-sign" 
+                    })
+                    if autotrd then autotrd:Set(false) end
+                    break
+                end
+            end
+
+            if tradeAmount > 0 and tradeCount >= tradeAmount then
+                WindUI:Notify({ Title = "Limit Item Tercapai", Content = "Batas jumlah item terpenuhi.", Duration = 5, Icon = "stop-circle" })
+                if autotrd then autotrd:Set(false) end
+                break
+            end
+
+            local itemsToTrade = GetItemsToTrade()
+            
+            if #itemsToTrade > 0 then
+                local itemToTrade = itemsToTrade[1]
+                local targetUUID = itemToTrade.UUID
+                
+                local itemBasePrice = 0
+                if ItemUtility then
+                    local iData = ItemUtility:GetItemData(itemToTrade.Id)
+                    if iData then itemBasePrice = iData.SellPrice or 0 end
+                end
+                local multiplier = itemToTrade.Metadata.SellMultiplier or 1
+                local itemValue = math.floor(itemBasePrice * multiplier)
+
+                local successCall = pcall(function()
+                    RF_InitiateTrade_Local:InvokeServer(targetId, targetUUID)
+                end)
+
+                if successCall then
+                    local startTime = os.clock()
+                    local isTraded = false
+                    repeat
+                        task.wait(0.5)
+                        if not IsItemStillInInventory(targetUUID) then isTraded = true end
+                    until isTraded or (os.clock() - startTime > 5)
+                    
+                    if isTraded then
+                        tradeCount = tradeCount + 1
+                        accumulatedValue = accumulatedValue + itemValue
+                        
+                        WindUI:Notify({
+                            Title = "Trade Sukses!",
+                            Content = string.format("Item: %s\nValue: %d | Total: %d/%d", itemToTrade.Name, itemValue, accumulatedValue, (isTradeByCoinActive and tradeStopAtCoins or 0)),
+                            Duration = 2,
+                            Icon = "check"
+                        })
+                        task.wait(tradeDelay)
+                    else
+                        WindUI:Notify({ Title = "Trade Gagal/Lag", Content = "Item tidak terkirim.", Duration = 2, Icon = "alert-triangle" })
+                        task.wait(1.5)
+                    end
+                else
+                    task.wait(1)
+                end
+            else
+                task.wait(2)
+            end
+        end
+        WindUI:Notify({ Title = "Auto Trade Berhenti", Duration = 3, Icon = "x" })
+    end)
+end
+
+local togglehold = trade:Toggle({
+    Title = "Hold Favorite Items",
+    Desc = "Jika ON, item yang di-Favorite tidak akan ikut di-trade.",
+    Value = false,
+    Callback = function(state)
+        tradeHoldFavorite = state
+        if state then
+            WindUI:Notify({ Title = "Safe Mode", Content = "Item Favorite aman dari Auto Trade.", Duration = 2, Icon = "lock" })
+        else
+            WindUI:Notify({ Title = "Warning", Content = "Item Favorite bisa ikut ter-trade!", Duration = 2, Icon = "alert-triangle" })
+        end
+    end
+})
+
+local autotrd = trade:Toggle({
+    Title = "Enable Auto Trade",
+    Icon = "arrow-right-left",
+    Value = false,
+    Callback = function(state)
+        autoTradeState = state
+        
+        if state then
+            if not selectedTradeTargetId or typeof(selectedTradeTargetId) ~= "number" then
+                WindUI:Notify({ Title = "Error", Content = "Pilih pemain target yang valid terlebih dahulu!", Duration = 3, Icon = "alert-triangle" })
+                if autotrd then autotrd:Set(false) end
+                return false
+            end
+
+            local targetPlayer = game.Players:GetPlayerByUserId(selectedTradeTargetId)
+            
+            if targetPlayer then
+                local targetChar = targetPlayer.Character
+                local targetHRP = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+                
+                local myChar = LocalPlayer.Character
+                local myHRP = myChar and myChar:FindFirstChild("HumanoidRootPart")
+
+                if targetHRP and myHRP then
+                    WindUI:Notify({ Title = "Teleporting...", Content = "Menuju ke posisi " .. targetPlayer.Name, Duration = 2, Icon = "map-pin" })
+                    myHRP.CFrame = targetHRP.CFrame * CFrame.new(0, 5, 0)
+                    task.wait(0.5)
+                else
+                    WindUI:Notify({ Title = "Teleport Gagal", Content = "Karakter target tidak ditemukan.", Duration = 3, Icon = "alert-triangle" })
+                    if autotrd then autotrd:Set(false) end
+                    return false
+                end
+            else
+                WindUI:Notify({ Title = "Teleport Gagal", Content = "Pemain target sudah keluar server.", Duration = 3, Icon = "x" })
+                if autotrd then autotrd:Set(false) end
+                return false
+            end
+
+            RunAutoTradeLoop()
+        else
+            if autoTradeThread then task.cancel(autoTradeThread) autoTradeThread = nil end
+        end
+    end
+})
+
+local accept = trade:Toggle({
+    Title = "Enable Auto Accept Trade",
+    Icon = "arrow-right-left",
+    Value = false,
+    Callback = function(state)
+        _G.RockHub_AutoAcceptTradeEnabled = state
+        -- Sinkronisasi dengan Config Utama jika ada
+        if Config then Config.AutoAcceptTrade = state end
+        
+        if state then
+            WindUI:Notify({
+                Title = "Auto Accept Trade ON! ✅",
+                Content = "Menerima semua permintaan trade secara otomatis.",
+                Duration = 3,
+                Icon = "check"
+            })
+        else
+            WindUI:Notify({
+                Title = "Auto Accept Trade OFF! ❌",
+                Content = "Menerima trade secara manual.",
+                Duration = 3,
+                Icon = "x"
+            })
+        end
+    end
+})
