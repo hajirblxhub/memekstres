@@ -2268,7 +2268,6 @@ Tab5:Section({
 Tab5:Button({
     Title = "Manual Mining Crystal",
     Description = "Teleport ke Crystal Depth & mining 2x (dengan fly)",
-    Locked = true,
     Callback = function()
         if not Config.axeUuid or Config.axeUuid == "" then
             getAxeUUID()
@@ -2324,7 +2323,6 @@ Tab5:Button({
 Tab5:Toggle({
     Title = "Auto Mining Crystal",
     Description = "Otomatis mining crystal saat event/text muncul",
-    Locked = true,
     Default = Config.AutoMining,
     Callback = function(state)
         Config.AutoMining = state
@@ -2439,3 +2437,416 @@ Tab5:Toggle({
 })
 
 Tab5:Divider()
+
+Tab5:Section({
+    Title = "Mysterious Cave & Pirate",
+    Icon = "lock"
+})
+
+Events.searchItemPickedUp = GetServerRemote("RE/SearchItemPickedUp")
+Events.gainAccessToMaze   = GetServerRemote("RE/GainAccessToMaze")
+Events.claimPirateChest   = GetServerRemote("RE/ClaimPirateChest")
+
+Tab5:Toggle({
+    Title = "Auto Open Mysterious Cave Wall",
+    Description = "Auto TNT 4x + buka tembok cave misterius",
+    Default = false,
+    Callback = function(state)
+        if state then
+            task.spawn(function()
+                if not Events.searchItemPickedUp or not Events.gainAccessToMaze then
+                    WindUI:Notify({
+                        Title = "Error",
+                        Content = "Salah satu remote TNT atau GainAccessToMaze tidak ditemukan!",
+                        Duration = 5
+                    })
+                    return
+                end
+
+                for i = 1, 4 do
+                    pcall(function()
+                        Events.searchItemPickedUp:FireServer("TNT")
+                    end)
+                    task.wait(0.6)
+                end
+                
+                task.wait(1.5)
+                pcall(function()
+                    Events.gainAccessToMaze:FireServer()
+                end)
+                
+                WindUI:Notify({
+                    Title = "Cave Wall",
+                    Content = "Mysterious Cave Wall dibuka!",
+                    Duration = 4
+                })
+            end)
+        end
+    end
+})
+
+Tab5:Toggle({
+    Title = "Auto Claim Pirate Chest",
+    Description = "Otomatis claim semua pirate chest di PirateChestStorage",
+    Default = false,
+    Callback = function(state)
+        _G.AutoOpenPirateChest = state
+        
+        if state then
+            task.spawn(function()
+                while _G.AutoOpenPirateChest do
+                    pcall(function()
+                        if not Events.claimPirateChest then
+                            task.wait(5)
+                            return
+                        end
+                        
+                        local pirateChestStorage = workspace:FindFirstChild("PirateChestStorage")
+                        if not pirateChestStorage then
+                            task.wait(5)
+                            return
+                        end
+                        
+                        local chestsFound = 0
+                        for _, chest in ipairs(pirateChestStorage:GetChildren()) do
+                            local chestId = chest.Name
+                            if chestId:match("%x%x%x%x%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%-%x%x%x%x%x%x%x%x%x%x%x%x") then
+                                pcall(function()
+                                    Events.claimPirateChest:FireServer(chestId)
+                                end)
+                                chestsFound = chestsFound + 1
+                                task.wait(0.4)
+                            end
+                        end
+                        
+                        if chestsFound > 0 then
+                            WindUI:Notify({
+                                Title = "Pirate Chest",
+                                Content = "Claim " .. chestsFound .. " chest berhasil!",
+                                Duration = 4
+                            })
+                        end
+                    end)
+                    task.wait(3)
+                end
+            end)
+            
+            WindUI:Notify({
+                Title = "Auto Pirate Chest",
+                Content = "Diaktifkan - scan setiap 3 detik",
+                Duration = 3.5
+            })
+        else
+            WindUI:Notify({
+                Title = "Auto Pirate Chest",
+                Content = "Dimatikan",
+                Duration = 2.5
+            })
+        end
+    end
+})
+
+Tab5:Divider()
+
+local Tab6 = Window:Tab({
+    Title = "Trading",
+    Icon = "handshake"
+})
+
+Tab6:Section({
+    Title = "Auto Trade Setup",
+    Icon = "package"
+})
+
+TradingController = {}
+local tradeFunc = nil
+
+pcall(function()
+    TradingController = require(ReplicatedStorage.Controllers.TradingController)
+    tradeFunc = ReplicatedStorage:WaitForChild("Packages"):WaitForChild("_Index"):WaitForChild("sleitnick_net@0.2.0"):WaitForChild("net"):WaitForChild("RF/RequestTrade")
+end)
+
+if not TradingController.CompletedTrade then
+    TradingController.CompletedTrade = function() end
+end
+if not TradingController.OnTradeCancelled then
+    TradingController.OnTradeCancelled = function() end
+end
+
+local TradeState = {
+    selectedPlayer = nil,
+    selectedItem = nil,
+    tradeAmount = 1,
+    trading = false,
+    successCount = 0,
+    totalToTrade = 0,
+    awaiting = false,
+    currentGrouped = {},
+    lastResult = nil
+}
+
+local function getGroupedByType(typeName)
+    local items = PlayerData:GetExpect({"Inventory", "Items"})
+    local grouped = {}
+    local values = {}
+    for _, item in ipairs(items) do
+        local info = ItemUtility:GetItemDataFromItemType("Items", item.Id)
+        if info and info.Data.Type == typeName then
+            local name = info.Data.Name
+            grouped[name] = grouped[name] or {count = 0, uuids = {}}
+            grouped[name].count += (item.Quantity or 1)
+            table.insert(grouped[name].uuids, item.UUID)
+        end
+    end
+    for name, data in pairs(grouped) do
+        table.insert(values, name .. " | Total " .. data.count .. "x")
+    end
+    return grouped, values
+end
+
+local statusParagraph = Tab6:Paragraph({
+    Title = "Trade Status",
+    Content = "Progress: Idle"
+})
+
+local function setStatus(text)
+    statusParagraph:SetContent(text or "Progress: Idle")
+end
+
+local itemDropdown = Tab6:Dropdown({
+    Title = "Select Item",
+    Values = {"None"},
+    Default = "None",
+    Callback = function(value)
+        if value == "None" then
+            TradeState.selectedItem = nil
+        else
+            TradeState.selectedItem = value:match("^(.-) %|") or value
+        end
+        setStatus()
+    end
+})
+
+Tab6:Input({
+    Title = "Amount to Trade",
+    Placeholder = "Enter number (max sesuai inventory)",
+    Default = "1",
+    Callback = function(value)
+        TradeState.tradeAmount = tonumber(value) or 1
+        setStatus()
+    end
+})
+
+Tab6:Button({
+    Title = "Refresh Fish List",
+    Callback = function()
+        local grouped, values = getGroupedByType("Fish")
+        TradeState.currentGrouped = grouped
+        itemDropdown:Refresh(values, true)
+        WindUI:Notify({
+            Title = "Refreshed",
+            Content = "Fish list updated",
+            Duration = 2
+        })
+    end
+})
+
+Tab6:Button({
+    Title = "Refresh Stone List",
+    Callback = function()
+        local grouped, values = getGroupedByType("Enchant Stones")
+        TradeState.currentGrouped = grouped
+        itemDropdown:Refresh(values, true)
+        WindUI:Notify({
+            Title = "Refreshed",
+            Content = "Enchant Stones list updated",
+            Duration = 2
+        })
+    end
+})
+
+local playerList = {}
+for _, plr in ipairs(Players:GetPlayers()) do
+    if plr ~= LocalPlayer then
+        table.insert(playerList, plr.Name)
+    end
+end
+if #playerList == 0 then
+    table.insert(playerList, "None")
+end
+
+local playerDropdown = Tab6:Dropdown({
+    Title = "Select Player",
+    Values = playerList,
+    Default = playerList[1] or "None",
+    Callback = function(value)
+        TradeState.selectedPlayer = (value ~= "None") and value or nil
+        setStatus()
+    end
+})
+
+Tab6:Button({
+    Title = "Refresh Players",
+    Callback = function()
+        local names = {}
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer then
+                table.insert(names, plr.Name)
+            end
+        end
+        playerDropdown:Refresh(names, true)
+        WindUI:Notify({
+            Title = "Players Refreshed",
+            Content = #names .. " players online",
+            Duration = 2
+        })
+    end
+})
+
+RETextNotification.OnClientEvent:Connect(function(data)
+    if not TradeState.trading then return end
+    if not data or not data.Text then return end
+    local msg = data.Text
+    if msg:find("Trade completed") then
+        TradeState.awaiting = false
+        TradeState.lastResult = "completed"
+        setStatus("Progress: Trade success")
+    elseif msg:find("Sent trade request") then
+        setStatus("Progress: Waiting player accept...")
+    end
+end)
+
+TradingController.CompletedTrade = function()
+    if TradeState.trading then
+        TradeState.awaiting = false
+        TradeState.lastResult = "completed"
+    end
+end
+
+TradingController.OnTradeCancelled = function()
+    if TradeState.trading then
+        TradeState.awaiting = false
+        TradeState.lastResult = "declined"
+    end
+end
+
+local function sendTrade(target, uuid, itemName)
+    while TradeState.trading do
+        TradeState.awaiting = true
+        TradeState.lastResult = nil
+        setStatus("Sending " .. (itemName or "Item") .. "...")
+
+        if tradeFunc then
+            pcall(function()
+                tradeFunc:InvokeServer(target.UserId, uuid)
+            end)
+        else
+            setStatus("Trade remote not found!")
+            TradeState.lastResult = "declined"
+            return false
+        end
+
+        local startTime = tick()
+        while TradeState.trading and TradeState.awaiting do
+            task.wait()
+            if tick() - startTime > 6 then
+                TradeState.awaiting = false
+                TradeState.lastResult = "timeout"
+                break
+            end
+        end
+
+        if TradeState.lastResult == "completed" then
+            TradeState.successCount += 1
+            setStatus("Success: " .. (itemName or "Item"))
+            return true
+        elseif TradeState.lastResult == "declined" or TradeState.lastResult == "timeout" then
+            setStatus("Skipped: " .. (itemName or "Item"))
+            return false
+        else
+            setStatus("Retrying: " .. (itemName or "Item") .. "...")
+            task.wait(0.5)
+        end
+    end
+    return false
+end
+
+local function startTrade()
+    if TradeState.trading then return end
+    if not TradeState.selectedPlayer or not TradeState.selectedItem then
+        WindUI:Notify({
+            Title = "Invalid Setup",
+            Content = "Pilih player & item terlebih dahulu!",
+            Duration = 4
+        })
+        return
+    end
+
+    TradeState.trading = true
+    TradeState.successCount = 0
+
+    local itemData = TradeState.currentGrouped[TradeState.selectedItem]
+    if not itemData then
+        setStatus("Item not found")
+        TradeState.trading = false
+        return
+    end
+
+    local target = Players:FindFirstChild(TradeState.selectedPlayer)
+    if not target then
+        setStatus("Player not found")
+        TradeState.trading = false
+        return
+    end
+
+    local uuids = itemData.uuids
+    TradeState.totalToTrade = math.min(TradeState.tradeAmount, #uuids)
+
+    local i = 1
+    while TradeState.trading and TradeState.successCount < TradeState.totalToTrade do
+        local uuid = uuids[i]
+        if not uuid then break end
+
+        local ok = sendTrade(target, uuid, TradeState.selectedItem)
+
+        if ok or TradeState.lastResult == "declined" or TradeState.lastResult == "timeout" then
+            i += 1
+        end
+    end
+
+    TradeState.trading = false
+    setStatus(string.format("All trades finished! (%d/%d success)", TradeState.successCount, TradeState.totalToTrade))
+
+    WindUI:Notify({
+        Title = "Trading Complete",
+        Content = "Auto trade selesai: " .. TradeState.successCount .. "/" .. TradeState.totalToTrade,
+        Duration = 5
+    })
+end
+
+Tab6:Toggle({
+    Title = "Start Auto Trade",
+    Description = "Kirim trade otomatis ke player terpilih (hati-hati scam!)",
+    Default = false,
+    Callback = function(state)
+        if state then
+            task.spawn(startTrade)
+            WindUI:Notify({
+                Title = "Auto Trade",
+                Content = "Dimulai... pastikan player accept!",
+                Duration = 4
+            })
+        else
+            TradeState.trading = false
+            TradeState.awaiting = false
+            setStatus("Progress: Idle")
+            WindUI:Notify({
+                Title = "Auto Trade",
+                Content = "Dihentikan",
+                Duration = 3
+            })
+        end
+    end
+})
+
+Tab6:Divider()
