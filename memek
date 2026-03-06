@@ -5033,118 +5033,47 @@ Tab10:Toggle({
 
 Tab10:Divider()
 
--- TAB 11: SHOP & GIFTING
+-- 1. Membuat Tab 11
 local Tab11 = Window:Tab({
-    Title = "Shop & Gifting",
-    Icon = "shopping-cart"
+    Title = "Gifting",
+    Icon = "gift"
 })
 
--- Bagian Luck Booster
-local LuckSection = Tab11:Section({
-    Title = "Luck Boosters",
-    Icon = "sparkles",
+-- 2. Menambahkan Section
+local GiftSection = Tab11:Section({
+    Title = "Gift System",
+    Icon = "gift",
     TextXAlignment = "Left",
     TextSize = 17
-})
-
-local luckBoosters = {
-    "x2 Luck",
-    "x4 Luck",
-    "x8 Luck"
-}
-local selectedLuckBooster = luckBoosters[1]
-
-Tab11:Dropdown({
-    Title = "Select Luck Booster",
-    Values = luckBoosters,
-    Value = selectedLuckBooster,
-    Callback = function(value)
-        selectedLuckBooster = value
-    end
-})
-
-Tab11:Button({
-    Title = "Buy Luck Booster",
-    Callback = function()
-        -- Kita pakai fungsi GetServerRemote yang sudah ada di baris 31 script kamu
-        local GiftRemote = GetServerRemote("Gifting") 
-        
-        if GiftRemote then
-            -- "net" di script kamu itu folder remotes, kita kirim lewat remote yang ketemu
-            GiftRemote:FireServer(selectedLuckBooster)
-            
-            WindUI:Notify({
-                Title = "Success",
-                Content = "Sent request for " .. selectedLuckBooster,
-                Duration = 3,
-                Icon = "check"
-            })
-        else
-            WindUI:Notify({
-                Title = "Error",
-                Content = "Remote Gifting gak ketemu di folder net!",
-                Duration = 5,
-                Icon = "x"
-            })
-        end
-    end
 })
 
 Tab11:Divider()
 
--- Bagian Skin Rod
-local RodSection = Tab11:Section({
-    Title = "Skin Rod",
-    Icon = "sword",
-    TextXAlignment = "Left",
-    TextSize = 17
-})
-
-local rodSkins = {
-    "Frozen Krampus Scythe",
-    "Gingerbread Katana",
-    "Christmas Parasol", 
-    "Corruption Edge", 
-    "Eclipse Katana", 
-    "The Vanquisher", 
-    "Black Hole Sword", 
-    "Ban Hammer", 
-    "Holy Trident", 
-    "Soul Scythe", 
-    "Aurelian Bow", 
-    "Cupid's Harp"
-}
-local selectedRodSkin = rodSkins[1]
-
-Tab11:Dropdown({
-    Title = "Select Rod Skin",
-    Values = rodSkins,
-    Value = selectedRodSkin,
-    Callback = function(value)
-        selectedRodSkin = value
-    end
-})
-
+-- 3. Tombol dengan Logika Remote Net
 Tab11:Button({
-    Title = "Buy Rod Skin",
+    Title = "Gift Skin Soul Scythe",
+    Locked = false,
     Callback = function()
-        -- Pakai cara yang sama, tembak langsung ke net remote
-        local GiftRemote = GetServerRemote("Gifting")
+        -- Mencari Remote untuk Gifting (biasanya bernama 'Gift' atau 'SendGift' dalam sistem Net)
+        -- Kita gunakan fungsi GetServerRemote yang sudah ada di script kamu
+        local GiftRemote = GetServerRemote("GiftingController") or GetServerRemote("OpenGift") 
         
         if GiftRemote then
-            GiftRemote:FireServer(selectedRodSkin)
-            
+            -- Mengirim argumen ke server lewat remote
+            GiftRemote:FireServer("Soul Scythe")
+
             WindUI:Notify({
                 Title = "Success",
-                Content = "Sent request for " .. selectedRodSkin,
+                Content = "Attempting to gift Soul Scythe...",
                 Duration = 3,
                 Icon = "check"
             })
         else
+            -- Jika remote tidak ditemukan atau sistem dipatch
             WindUI:Notify({
                 Title = "Error",
-                Content = "Remote Gifting gak ketemu!",
-                Duration = 5,
+                Content = "Remote Gifting tidak ditemukan atau sudah dipatch.",
+                Duration = 3,
                 Icon = "x"
             })
         end
