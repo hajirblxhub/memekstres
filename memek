@@ -198,7 +198,7 @@ local Label = Instance.new("TextLabel")
 Label.Parent = MainFrame
 Label.Size = UDim2.new(1, 0, 1, 0)
 Label.BackgroundTransparency = 1
-Label.Text = "Talon Bypass 🤍"
+Label.Text = "👀"
 Label.TextColor3 = Color3.fromRGB(255, 255, 255)
 Label.TextSize = 10
 Label.Font = Enum.Font.GothamBold
@@ -1119,13 +1119,13 @@ G2L["ButtonRezise_2"].MouseButton1Click:Connect(function()
 end)
 
 Window:Tag({
-    Title = "PREMIUM 3.0",
+    Title = "DEV VERSION",
     Color = Color3.fromRGB(200, 0, 255),   -- ← Ubah ke ungu cerah
     Radius = 17,
 })
 
 Window:Tag({
-    Title = "KASIH KERAS",
+    Title = "THX SUPPORT",
     Color = Color3.fromRGB(200, 0, 255),   -- ← Ubah ke ungu cerah (sama supaya konsisten)
     Radius = 17,
 })
@@ -3631,7 +3631,6 @@ Tab10:Divider()
 Tab10:Input({
     Title = "Cancel Delay",
     Placeholder = "1.8",
-    Locked = true, 
     Callback = function(input)
         local num = tonumber(input)
         if num then
@@ -3654,7 +3653,6 @@ Tab10:Input({
 
 Tab10:Toggle({
     Title = "MPRUY BLATANT",
-    Locked = true, 
     Default = false,
     Callback = function(v)
         _G.FlashBlatant = v
@@ -4058,15 +4056,11 @@ end)
 Tab10:Divider()
 
 
--- =============================================
--- WHATSAPP NOTIFICATION VIA FONNTE (CLEAN VERSION)
--- Hanya pakai Fonnte, hapus semua WA Business API
--- =============================================
 
 Tab10:Divider()
 
 Tab10:Section({
-    Title = "WhatsApp Notification (DELAYED)",
+    Title = "WhatsApp Notification",
     Icon = "message-circle",
     TextXAlignment = "Left",
     TextSize = 17 
@@ -4160,7 +4154,7 @@ end
 Tab10:Input({
     Title = "Nomor Tujuan WA (628...)",
     Placeholder = "6281234567890",
-    Locked = true, 
+    --Locked = true, 
     Value = _G.WA_TargetPhone or "",
     Callback = function(text)
         _G.WA_TargetPhone = text:gsub("%s+", ""):gsub("^0", "62")  -- auto fix format
@@ -4170,7 +4164,7 @@ Tab10:Input({
 Tab10:Input({
     Title = "Fonnte Token",
     Placeholder = "Masukkan token Fonnte kamu",
-    Locked = true, 
+    --Locked = true, 
     Value = _G.FonnteToken or "",
     Callback = function(text)
         _G.FonnteToken = text
@@ -4180,7 +4174,7 @@ Tab10:Input({
 Tab10:Dropdown({
     Title = "Rarity Filter (WA)",
     Values = rarityList,
-    Locked = true, 
+    --Locked = true, 
     Multi = true,
     AllowNone = true,
     Value = _G.WebhookRarities or {},
@@ -4192,7 +4186,7 @@ Tab10:Dropdown({
 Tab10:Dropdown({
     Title = "Variant Filter (WA)",
     Values = variantList,
-    Locked = true, 
+    --Locked = true, 
     Multi = true,
     AllowNone = true,
     Value = _G.WebhookVariants or {},
@@ -4203,7 +4197,7 @@ Tab10:Dropdown({
 
 Tab10:Toggle({
     Title = "Kirim Notif WhatsApp",
-    Locked = true, 
+    --Locked = true, 
     Value = _G.DetectNewFishActive or false,
     Callback = function(state)
         _G.DetectNewFishActive = state
@@ -4217,7 +4211,7 @@ Tab10:Toggle({
 
 Tab10:Button({
     Title = "Test Kirim WA",
-    Locked = true, 
+    --Locked = true, 
     Callback = function()
         if _G.WA_TargetPhone == "" or _G.FonnteToken == "" then
             WindUI:Notify({Title = "Error", Content = "Isi Nomor WA & Token Fonnte dulu!", Duration = 4})
@@ -4227,7 +4221,7 @@ Tab10:Button({
         sendFonnteMessage(
             _G.WA_TargetPhone,
             "Test sukses dari Noxius Hub! 🔥 WA Notification aktif",
-            "https://i.imgur.com/abc123.png"  -- gambar dummy, bisa diganti link gambar lain
+            "https://i.imgur.com/abc123.png"  
         )
         
         WindUI:Notify({Title = "Test WA", Content = "Pesan tes terkirim ke " .. _G.WA_TargetPhone, Duration = 3})
@@ -4236,10 +4230,7 @@ Tab10:Button({
 
 Tab10:Divider()
 
--- =============================================
--- AUTO ENCHANT & DOUBLE ENCHANT FEATURES
--- Ditempatkan setelah WhatsApp Notification di Tab10
--- =============================================
+
 
 Tab10:Divider()
 
@@ -4251,12 +4242,6 @@ Tab10:Section({
 })
 
 Tab10:Divider()
-
--- =============================================
--- DEFINISI REMOTE (tambahkan di bagian atas script kalau belum ada)
--- =============================================
--- Contoh definisi (taruh di blok Events/Remotes lo):
--- local function GetServerRemote(name) ... end  (kalau belum ada, copy dari kode lo sebelumnya)
 
 Events.activateAltarRemote   = GetServerRemote("RE/ActivateEnchantingAltar")   -- sesuai info lo
 Events.activateAltarRemote2  = GetServerRemote("RE/ActivateEnchantingAltar2")  -- kalau ada varian kedua
@@ -4746,6 +4731,7 @@ Tab10:Divider()
 -- CUSTOM SKIN ANIMATION (Replace Fish Caught Anim)
 -- =============================================
 
+Tab10:Divider()
 
 Tab10:Section({
     Title = "Custom Skin Animation",
@@ -5046,3 +5032,121 @@ Tab10:Toggle({
 })
 
 Tab10:Divider()
+
+-- TAB 11: SHOP & GIFTING
+local Tab11 = Window:Tab({
+    Title = "Shop & Gifting",
+    Icon = "shopping-cart"
+})
+
+-- Bagian Luck Booster
+local LuckSection = Tab11:Section({
+    Title = "Luck Boosters",
+    Icon = "sparkles",
+    TextXAlignment = "Left",
+    TextSize = 17
+})
+
+local luckBoosters = {
+    "x2 Luck",
+    "x4 Luck",
+    "x8 Luck"
+}
+local selectedLuckBooster = luckBoosters[1]
+
+Tab11:Dropdown({
+    Title = "Select Luck Booster",
+    Values = luckBoosters,
+    Value = selectedLuckBooster,
+    Callback = function(value)
+        selectedLuckBooster = value
+    end
+})
+
+Tab11:Button({
+    Title = "Buy Luck Booster",
+    Callback = function()
+        -- Kita pakai fungsi GetServerRemote yang sudah ada di baris 31 script kamu
+        local GiftRemote = GetServerRemote("Gifting") 
+        
+        if GiftRemote then
+            -- "net" di script kamu itu folder remotes, kita kirim lewat remote yang ketemu
+            GiftRemote:FireServer(selectedLuckBooster)
+            
+            WindUI:Notify({
+                Title = "Success",
+                Content = "Sent request for " .. selectedLuckBooster,
+                Duration = 3,
+                Icon = "check"
+            })
+        else
+            WindUI:Notify({
+                Title = "Error",
+                Content = "Remote Gifting gak ketemu di folder net!",
+                Duration = 5,
+                Icon = "x"
+            })
+        end
+    end
+})
+
+Tab11:Divider()
+
+-- Bagian Skin Rod
+local RodSection = Tab11:Section({
+    Title = "Skin Rod",
+    Icon = "sword",
+    TextXAlignment = "Left",
+    TextSize = 17
+})
+
+local rodSkins = {
+    "Frozen Krampus Scythe",
+    "Gingerbread Katana",
+    "Christmas Parasol", 
+    "Corruption Edge", 
+    "Eclipse Katana", 
+    "The Vanquisher", 
+    "Black Hole Sword", 
+    "Ban Hammer", 
+    "Holy Trident", 
+    "Soul Scythe", 
+    "Aurelian Bow", 
+    "Cupid's Harp"
+}
+local selectedRodSkin = rodSkins[1]
+
+Tab11:Dropdown({
+    Title = "Select Rod Skin",
+    Values = rodSkins,
+    Value = selectedRodSkin,
+    Callback = function(value)
+        selectedRodSkin = value
+    end
+})
+
+Tab11:Button({
+    Title = "Buy Rod Skin",
+    Callback = function()
+        -- Pakai cara yang sama, tembak langsung ke net remote
+        local GiftRemote = GetServerRemote("Gifting")
+        
+        if GiftRemote then
+            GiftRemote:FireServer(selectedRodSkin)
+            
+            WindUI:Notify({
+                Title = "Success",
+                Content = "Sent request for " .. selectedRodSkin,
+                Duration = 3,
+                Icon = "check"
+            })
+        else
+            WindUI:Notify({
+                Title = "Error",
+                Content = "Remote Gifting gak ketemu!",
+                Duration = 5,
+                Icon = "x"
+            })
+        end
+    end
+})
