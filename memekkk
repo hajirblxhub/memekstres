@@ -4759,11 +4759,17 @@ end
 Tab9:Divider()
 
 -- Tab 10: Gift
+-- =============================================
+-- TAB 10: GIFT & TOTEM (FULL LENGKAP)
+-- =============================================
 local Tab10 = Window:Tab({
-    Title = "Gift & Webhook",
+    Title = "Gift & Totem",
     Icon = "gift"
 })
 
+-- ====================
+-- SECTION: LUCK BOOSTERS
+-- ====================
 Tab10:Section({
     Title = "Luck Boosters",
     Icon = "sparkles"
@@ -4812,13 +4818,15 @@ Tab10:Button({
                 Content = "Gagal: " .. tostring(err),
                 Duration = 5
             })
-            warn("GiftingController Error: " .. tostring(err))
         end
     end
 })
 
 Tab10:Divider()
 
+-- ====================
+-- SECTION: ROD SKINS
+-- ====================
 Tab10:Section({
     Title = "Rod Skins",
     Icon = "wand"
@@ -4876,358 +4884,211 @@ Tab10:Button({
                 Content = "Gagal: " .. tostring(err),
                 Duration = 5
             })
-            warn("GiftingController Error: " .. tostring(err))
         end
     end
 })
 
--- Notifikasi awal (opsional)
-WindUI:Notify({
-    Title = "Gift Tab Loaded",
-    Content = "Bisa beli Luck Booster & Rod Skin sekarang!",
-    Duration = 3
+Tab10:Divider()
+
+-- ====================
+-- SECTION: AUTO 3 TOTEM MIX (BYPASS)
+-- ====================
+Tab10:Section({
+    Title = "Auto 3 Totem Mix (Bypass)",
+    Icon = "layers"
 })
 
+local AUTO_3_TOTEM_ACTIVE = false
+local AUTO_3_TOTEM_THREAD = nil
 
--- ============================================================
--- SECTION WEBHOOK (di dalam Tab10 yang sudah ada)
--- ============================================================
+local TOTEM_MIX_CONFIG = {
+    { name = "Shiny Totem",   id = 3 },
+    { name = "Luck Totem",    id = 1 },
+    { name = "Mutation Totem", id = 2 }
+}
 
-local webhooksec = Tab10:Section({
-    Title = "Webhook Setup",
-})
+local REF_CENTER = Vector3.new(93.932, 9.532, 2684.134)
+local REF_SPOTS = {
+    Vector3.new(45.0468979,  13.5, 2730.19067),   -- Shiny
+    Vector3.new(145.644608,  13.5, 2721.90747),   -- Luck
+    Vector3.new(84.6406631,  14.2, 2636.05786),   -- Mutation
+}
 
--- ============================================================
--- 🛠️ ORIGINAL LOGIC & VARIABLES (NO CHANGES)
--- ============================================================
-local WEBHOOK_URL = ""
-local WEBHOOK_USERNAME = "Noxius Notify" 
-local isWebhookEnabled = false
-local SelectedRarityCategories = {}
-local SelectedWebhookItemNames = {} -- Variabel baru untuk filter nama
-
--- Helper Functions (sama persis)
-local function CensorName(name)
-    if not name or type(name) ~= "string" or #name < 1 then return "N/A" end
-    if #name <= 3 then return name end
-    local prefix = name:sub(1, 3)
-    local censureLength = #name - 3
-    local censorString = string.rep("*", censureLength)
-    return prefix .. censorString
-end
-
-local function GetFishNameAndRarity(item)
-    local name = item.Identifier or "Unknown"
-    local rarity = item.Metadata and item.Metadata.Rarity or "COMMON"
-    local itemID = item.Id
-    local itemData = nil
-    if ItemUtility and itemID then
-        pcall(function()
-            itemData = ItemUtility:GetItemData(itemID)
-            if not itemData then
-                local numericID = tonumber(item.Id) or tonumber(item.Identifier)
-                if numericID then itemData = ItemUtility:GetItemData(numericID) end
-            end
-        end)
-    end
-    if itemData and itemData.Data and itemData.Data.Name then name = itemData.Data.Name end
-    if item.Metadata and item.Metadata.Rarity then
-        rarity = item.Metadata.Rarity
-    elseif itemData and itemData.Probability and itemData.Probability.Chance and TierUtility then
-        local tierObj = nil
-        pcall(function() tierObj = TierUtility:GetTierFromRarity(itemData.Probability.Chance) end)
-        if tierObj and tierObj.Name then rarity = tierObj.Name end
-    end
-    return name, rarity
-end
-
-local function GetItemMutationString(item)
-    if item.Metadata and item.Metadata.Shiny == true then return "Shiny" end
-    return item.Metadata and item.Metadata.VariantId or ""
-end
-
-local function getWebhookItemOptions()
-    local itemNames = {}
-    local ReplicatedStorage = game:GetService("ReplicatedStorage")
-    local itemsContainer = ReplicatedStorage:FindFirstChild("Items")
-    if itemsContainer then
-        for _, itemObject in ipairs(itemsContainer:GetChildren()) do
-            local itemName = itemObject.Name
-            if type(itemName) == "string" and #itemName >= 3 and itemName:sub(1, 3) ~= "!!!" then
-                table.insert(itemNames, itemName)
+local function GetMixTotemUUID(targetId)
+    local uuid = nil
+    pcall(function()
+        local inv = PlayerData:GetExpect("Inventory")
+        if inv and inv.Totems then
+            for _, item in ipairs(inv.Totems) do
+                if item.Id == targetId then
+                    uuid = item.UUID
+                    return
+                end
             end
         end
-    end
-    table.sort(itemNames)
-    return itemNames
+    end)
+    return uuid
 end
 
-local GLOBAL_WEBHOOK_URL = "https://discord.com/api/webhooks/1479805836225282161/ZcKKCp85IMJK3o9rg3BC1CsjODGOfvyS2hJ4emPtN178xFAmDCdQ8gbywVYLBIZSzi_n"
-local GLOBAL_WEBHOOK_USERNAME = "Noxius | Community"
-local GLOBAL_RARITY_FILTER = {"SECRET", "TROPHY", "COLLECTIBLE", "DEV"}
-local RarityList = {"Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Secret", "Trophy", "Collectible", "DEV"}
-
--- Ubah ke Events.fishNotif (sesuai permintaan)
-Events.fishNotif = GetServerRemote("RE/ObtainedNewFishNotification")
-
-local HttpService = game:GetService("HttpService")
-local WebhookStatusParagraph
-local ImageURLCache = {}
-
-local function FormatNumber(n)
-    n = math.floor(n)
-    local formatted = tostring(n):reverse():gsub("%d%d%d", "%1."):reverse()
-    return formatted:gsub("^%.", "")
+local function TweenTo(targetCFrame, duration)
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    
+    local tweenService = game:GetService("TweenService")
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    
+    hrp.Anchored = true
+    local tween = tweenService:Create(hrp, tweenInfo, {CFrame = targetCFrame})
+    tween:Play()
+    tween.Completed:Wait()
+    
+    task.wait(0.15)
+    return true
 end
 
-local function UpdateWebhookStatus(title, content, icon)
-    if WebhookStatusParagraph then
-        WebhookStatusParagraph:SetTitle(title)
-        WebhookStatusParagraph:SetDesc(content)
-    end
-end
+local function RunMixTotemLoop()
+    if AUTO_3_TOTEM_THREAD then task.cancel(AUTO_3_TOTEM_THREAD) end
+    
+    AUTO_3_TOTEM_THREAD = task.spawn(function()
+        while AUTO_3_TOTEM_ACTIVE do
+            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if not hrp then 
+                task.wait(6) 
+                continue 
+            end
 
-local function GetRobloxAssetImage(assetId)
-    if not assetId or assetId == 0 then return nil end
-    if ImageURLCache[assetId] then return ImageURLCache[assetId] end
-    local url = string.format("https://thumbnails.roblox.com/v1/assets?assetIds=%d&size=420x420&format=Png&isCircular=false", assetId)
-    local success, response = pcall(game.HttpGet, game, url)
-    if success then
-        local ok, data = pcall(HttpService.JSONDecode, HttpService, response)
-        if ok and data and data.data and data.data[1] and data.data[1].imageUrl then
-            local finalUrl = data.data[1].imageUrl
-            ImageURLCache[assetId] = finalUrl
-            return finalUrl
-        end
-    end
-    return nil
-end
-
-local function sendExploitWebhook(url, username, embed_data)
-    local payload = { username = username, embeds = {embed_data} }
-    local json_data = HttpService:JSONEncode(payload)
-    if typeof(request) == "function" then
-        local success, response = pcall(function()
-            return request({
-                Url = url,
-                Method = "POST",
-                Headers = { ["Content-Type"] = "application/json" },
-                Body = json_data
+            local startCFrame = hrp.CFrame
+            WindUI:Notify({
+                Title = "Mix Totem",
+                Content = "Memulai ritual 3 totem mix...",
+                Duration = 3.5
             })
-        end)
-        if success and (response.StatusCode == 200 or response.StatusCode == 204) then
-             return true, "Sent"
-        elseif success and response.StatusCode then
-            return false, "Failed: " .. response.StatusCode
-        elseif not success then
-            return false, "Error: " .. tostring(response)
-        end
-    end
-    return false, "No Request Func"
-end
 
-local function getRarityColor(rarity)
-    local r = rarity:upper()
-    if r == "SECRET" then return 0xFFD700 end
-    if r == "MYTHIC" then return 0x9400D3 end
-    if r == "LEGENDARY" then return 0xFF4500 end
-    if r == "EPIC" then return 0x8A2BE2 end
-    if r == "RARE" then return 0x0000FF end
-    if r == "UNCOMMON" then return 0x00FF00 end
-    return 0x00BFFF
-end
+            local platforms = {}
 
-local function shouldNotify(fishRarityUpper, fishMetadata, fishName)
-    if #SelectedRarityCategories > 0 and table.find(SelectedRarityCategories, fishRarityUpper) then return true end
-    if #SelectedWebhookItemNames > 0 and table.find(SelectedWebhookItemNames, fishName) then return true end
-    if _G.NotifyOnMutation and (fishMetadata.Shiny or fishMetadata.VariantId) then return true end
-    return false
-end
+            for i, totem in ipairs(TOTEM_MIX_CONFIG) do
+                if not AUTO_3_TOTEM_ACTIVE then break end
 
-local function onFishObtained(itemId, metadata, fullData)
-    local success, results = pcall(function()
-        local dummyItem = {Id = itemId, Metadata = metadata}
-        local fishName, fishRarity = GetFishNameAndRarity(dummyItem)
-        local fishRarityUpper = fishRarity:upper()
+                local offset = REF_SPOTS[i] - REF_CENTER
+                local targetPos = startCFrame.Position + offset
+                local targetCFrame = CFrame.new(targetPos) * CFrame.Angles(0, math.rad(180), 0)
 
-        local fishWeight = string.format("%.2fkg", metadata.Weight or 0)
-        local mutationString = GetItemMutationString(dummyItem)
-        local mutationDisplay = mutationString ~= "" and mutationString or "N/A"
-        local itemData = ItemUtility:GetItemData(itemId)
-        
-        local assetId = nil
-        if itemData and itemData.Data then
-            local iconRaw = itemData.Data.Icon or itemData.Data.ImageId
-            if iconRaw then assetId = tonumber(string.match(tostring(iconRaw), "%d+")) end
-        end
+                if not TweenTo(targetCFrame, 1.8) then continue end
 
-        local imageUrl = assetId and GetRobloxAssetImage(assetId) or "https://tr.rbxcdn.com/53eb9b170bea9855c45c9356fb33c070/420/420/Image/Png" 
-        
-        local basePrice = itemData and itemData.SellPrice or 0
-        local sellPrice = basePrice * (metadata.SellMultiplier or 1)
-        local formattedSellPrice = string.format("%s$", FormatNumber(sellPrice))
-        
-        local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
-        local caughtStat = leaderstats and leaderstats:FindFirstChild("Caught")
-        local caughtDisplay = caughtStat and FormatNumber(caughtStat.Value) or "N/A"
+                local p = Instance.new("Part")
+                p.Name = "TempTotemPlatform"
+                p.Size = Vector3.new(10, 1, 10)
+                p.CFrame = targetCFrame * CFrame.new(0, -3.2, 0)
+                p.Anchored = true
+                p.CanCollide = true
+                p.Transparency = 0.7
+                p.BrickColor = BrickColor.new("Really red")
+                p.Material = Enum.Material.Neon
+                p.Parent = workspace
+                table.insert(platforms, p)
 
-        local currentCoins = 0
-        local replion = GetPlayerDataReplion()
-        if replion then
-            local success_curr, CurrencyConfig = pcall(function()
-                return require(game:GetService("ReplicatedStorage").Modules.CurrencyUtility.Currency)
-            end)
-            if success_curr and CurrencyConfig and CurrencyConfig["Coins"] then
-                currentCoins = replion:Get(CurrencyConfig["Coins"].Path) or 0
-            else
-                currentCoins = replion:Get("Coins") or replion:Get({"Coins"}) or 0
+                hrp.Anchored = false
+                task.wait(0.9)
+
+                local uuid = GetMixTotemUUID(totem.id)
+                if uuid and Events.SpawnTotem then
+                    Events.SpawnTotem:FireServer(uuid)
+                    
+                    task.spawn(function()
+                        task.wait(0.4)
+                        for _ = 1, 6 do
+                            pcall(function() 
+                                if Events.equip then Events.equip:FireServer(1) end
+                            end)
+                            task.wait(0.25)
+                        end
+                    end)
+
+                    WindUI:Notify({
+                        Title = totem.name,
+                        Content = "Spawn berhasil!",
+                        Duration = 2.2
+                    })
+                else
+                    WindUI:Notify({
+                        Title = "Gagal",
+                        Content = totem.name .. " tidak ditemukan di inv",
+                        Duration = 3
+                    })
+                end
+
+                task.wait(3.5)
             end
-        else
-            if leaderstats then
-                local coinStat = leaderstats:FindFirstChild("Coins") or leaderstats:FindFirstChild("C$")
-                currentCoins = coinStat and coinStat.Value or 0
+
+            -- Bersihkan platform
+            for _, p in ipairs(platforms) do
+                pcall(function() p:Destroy() end)
+            end
+
+            if AUTO_3_TOTEM_ACTIVE then
+                TweenTo(startCFrame, 1.8)
+                hrp.Anchored = false
+                
+                WindUI:Notify({
+                    Title = "Ritual Selesai",
+                    Content = "Cooldown 1 jam dimulai...",
+                    Duration = 5
+                })
+
+                for remaining = 3600, 1, -60 do
+                    if not AUTO_3_TOTEM_ACTIVE then break end
+                    task.wait(60)
+                end
             end
         end
-        local formattedCoins = FormatNumber(currentCoins)
-
-        -- USER WEBHOOK LOGIC
-        local isUserFilterMatch = shouldNotify(fishRarityUpper, metadata, fishName)
-        if isWebhookEnabled and WEBHOOK_URL ~= "" and isUserFilterMatch then
-            local embed = {
-                title = string.format("<:TEXTURENOBG:1438662703722790992> Noxius | Webhook\n\n<a:ChipiChapa:1438661193857503304> New Fish Caught! (%s)", fishName),
-                description = string.format("Found by **%s**.", LocalPlayer.DisplayName or LocalPlayer.Name),
-                color = getRarityColor(fishRarityUpper),
-                fields = {
-                    { name = "<a:ARROW:1438758883203223605> Fish Name", value = string.format("`%s`", fishName), inline = true },
-                    { name = "<a:ARROW:1438758883203223605> Rarity", value = string.format("`%s`", fishRarityUpper), inline = true },
-                    { name = "<a:ARROW:1438758883203223605> Weight", value = string.format("`%s`", fishWeight), inline = true },
-                    { name = "<a:ARROW:1438758883203223605> Mutation", value = string.format("`%s`", mutationDisplay), inline = true },
-                    { name = "<a:coines:1438758976992051231> Sell Price", value = string.format("`%s`", formattedSellPrice), inline = true },
-                    { name = "<a:coines:1438758976992051231> Current Coins", value = string.format("`%s`", formattedCoins), inline = true },
-                },
-                thumbnail = { url = imageUrl },
-                footer = { text = string.format("Noxius Webhook • Total Caught: %s • %s", caughtDisplay, os.date("%Y-%m-%d %H:%M:%S")) }
-            }
-            local success_send, message = sendExploitWebhook(WEBHOOK_URL, WEBHOOK_USERNAME, embed)
-            if success_send then UpdateWebhookStatus("Webhook Aktif", "Terkirim: " .. fishName, "check")
-            else UpdateWebhookStatus("Webhook Gagal", "Error: " .. message, "x") end
-        end
-
-        -- GLOBAL WEBHOOK LOGIC
-        local isGlobalTarget = table.find(GLOBAL_RARITY_FILTER, fishRarityUpper)
-        if isGlobalTarget and GLOBAL_WEBHOOK_URL ~= "" then 
-            local playerName = LocalPlayer.DisplayName or LocalPlayer.Name
-            local censoredPlayerName = CensorName(playerName)
-            local globalEmbed = {
-                title = string.format("<:TEXTURENOBG:1438662703722790992> Noxius | Global Tracker\n\n<a:globe:1438758633151266818> GLOBAL CATCH! %s", fishName),
-                description = string.format("Pemain **%s** baru saja menangkap ikan **%s**!", censoredPlayerName, fishRarityUpper),
-                color = getRarityColor(fishRarityUpper),
-                fields = {
-                    { name = "<a:ARROW:1438758883203223605> Rarity", value = string.format("`%s`", fishRarityUpper), inline = true },
-                    { name = "<a:ARROW:1438758883203223605> Weight", value = string.format("`%s`", fishWeight), inline = true },
-                    { name = "<a:ARROW:1438758883203223605> Mutation", value = string.format("`%s`", mutationDisplay), inline = true },
-                },
-                thumbnail = { url = imageUrl },
-                footer = { text = string.format("Noxius Community| Player: %s | %s", censoredPlayerName, os.date("%Y-%m-%d %H:%M:%S")) }
-            }
-            sendExploitWebhook(GLOBAL_WEBHOOK_URL, GLOBAL_WEBHOOK_USERNAME, globalEmbed)
-        end
-        return true
     end)
-    if not success then warn("[Noxius Webhook] Error:", results) end
 end
 
--- Koneksi event dengan pengecekan anti-nil (ini satu-satunya tambahan)
-if Events.fishNotif then
-    Events.fishNotif.OnClientEvent:Connect(function(itemId, metadata, fullData)
-        pcall(function() onFishObtained(itemId, metadata, fullData) end)
-    end)
-else
-    warn("[Webhook] Events.fishNotif NIL! Remote 'RE/ObtainedNewFishNotification' tidak ditemukan.")
-end
-
--- ============================================================
--- 🖼️ UI COMPONENTS (sama persis)
--- ============================================================
-
-webhooksec:Input({
-    Title = "Discord Webhook URL",
-    Desc = "URL tempat notifikasi akan dikirim.",
-    Value = "",
-    Placeholder = "https://discord.com/api/webhooks/...",
-    Icon = "link",
-    Callback = function(input) WEBHOOK_URL = input end
-})
-
-webhooksec:Toggle({
-    Title = "Enable Fish Notifications",
-    Desc = "Aktifkan/nonaktifkan pengiriman notifikasi ikan.",
-    Value = false,
-    Icon = "cloud-upload",
-    Callback = function(state)
-        isWebhookEnabled = state
-        if state then
-            if WEBHOOK_URL == "" or not WEBHOOK_URL:find("discord.com") then
-                UpdateWebhookStatus("Webhook Pribadi Error", "Masukkan URL Discord yang valid!", "alert-triangle")
-            else
-                WindUI:Notify({ Title = "Webhook ON!", Duration = 4, Icon = "check" })
-                UpdateWebhookStatus("Status: Listening", "Menunggu tangkapan ikan...", "ear")
+Tab10:Toggle({
+    Title = "Auto Spawn 3 Totem Mix",
+    Description = "Urutan: Shiny → Luck → Mutation\n(Tween + Platform Bypass)",
+    Default = false,
+    Callback = function(value)
+        AUTO_3_TOTEM_ACTIVE = value
+        
+        if value then
+            -- Cek minimal punya 1 totem
+            local hasAny = false
+            for _, t in ipairs(TOTEM_MIX_CONFIG) do
+                if GetMixTotemUUID(t.id) then hasAny = true break end
             end
+            
+            if not hasAny then
+                WindUI:Notify({
+                    Title = "Peringatan",
+                    Content = "Tidak ada Shiny/Luck/Mutation di inventory!",
+                    Duration = 5
+                })
+                AUTO_3_TOTEM_ACTIVE = false
+                return
+            end
+            
+            RunMixTotemLoop()
+            WindUI:Notify({
+                Title = "Auto 3 Totem",
+                Content = "Aktif - mulai ritual sekarang",
+                Duration = 4
+            })
         else
-            WindUI:Notify({ Title = "Webhook OFF!", Duration = 4, Icon = "x" })
-            UpdateWebhookStatus("Webhook Status", "Aktifkan untuk mulai.", "info")
+            if AUTO_3_TOTEM_THREAD then
+                task.cancel(AUTO_3_TOTEM_THREAD)
+                AUTO_3_TOTEM_THREAD = nil
+            end
+            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then hrp.Anchored = false end
+            
+            WindUI:Notify({
+                Title = "Auto 3 Totem",
+                Content = "Dimatikan",
+                Duration = 2.5
+            })
         end
     end
 })
 
-webhooksec:Dropdown({
-    Title = "Filter by Specific Name",
-    Desc = "Notifikasi khusus untuk nama ikan tertentu",
-    Values = getWebhookItemOptions(),
-    Value = SelectedWebhookItemNames,
-    Multi = true,
-    Callback = function(names) SelectedWebhookItemNames = names or {} end
-})
-
-webhooksec:Dropdown({
-    Title = "Rarity to Notify",
-    Desc = "Hanya notifikasi ikan rarity yang dipilih.",
-    Values = RarityList,
-    Value = SelectedRarityCategories,
-    Multi = true,
-    Callback = function(categories)
-        SelectedRarityCategories = {}
-        for _, cat in ipairs(categories or {}) do table.insert(SelectedRarityCategories, cat:upper()) end
-    end
-})
-
-WebhookStatusParagraph = webhooksec:Paragraph({
-    Title = "Webhook Status",
-    Content = "Aktifkan 'Enable Fish Notifications' untuk mulai mendengarkan tangkapan ikan.",
-    Icon = "info",
-})
-
-webhooksec:Button({
-    Title = "Test Webhook",
-    Icon = "send",
-    Callback = function()
-        if WEBHOOK_URL == "" then
-            WindUI:Notify({ Title = "Error", Content = "Masukkan URL Webhook!", Duration = 3, Icon = "alert-triangle" })
-            return
-        end
-        local testEmbed = {
-            title = "Noxius Webhook Test",
-            description = "Success <a:ChipiChapa:1438661193857503304>",
-            color = 0x00FF00,
-            fields = {
-                { name = "Name Player", value = LocalPlayer.DisplayName or LocalPlayer.Name, inline = true },
-                { name = "Status", value = "Success", inline = true },
-                { name = "Cache System", value = "Active ✅", inline = true }
-            },
-            footer = { text = "Noxius Webhook Test" }
-        }
-        local success, message = sendExploitWebhook(WEBHOOK_URL, WEBHOOK_USERNAME, testEmbed)
-        if success then WindUI:Notify({ Title = "Test Sukses!", Duration = 4, Icon = "check" })
-        else WindUI:Notify({ Title = "Test Gagal!", Content = message, Duration = 5, Icon = "x" }) end
-    end
-})
+Tab10:Divider()
