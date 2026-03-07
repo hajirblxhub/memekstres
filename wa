@@ -4888,17 +4888,17 @@ WindUI:Notify({
     Duration = 3
 })
 
+
 -- ============================================================
--- SECTION WEBHOOK (ditambahkan di dalam Tab10 yang sama)
+-- SECTION WEBHOOK (di dalam Tab10 yang sudah ada)
 -- ============================================================
 
-local webhookSection = Tab10:Section({
-    Title = "Webhook & Catch Notifier",
-    Icon = "webhook",
+local webhooksec = Tab10:Section({
+    Title = "Webhook Setup",
 })
 
 -- ============================================================
--- 🛠️ ORIGINAL LOGIC & VARIABLES (NO CHANGES, kecuali remote name)
+-- 🛠️ ORIGINAL LOGIC & VARIABLES (NO CHANGES)
 -- ============================================================
 local WEBHOOK_URL = ""
 local WEBHOOK_USERNAME = "Noxius Notify" 
@@ -4911,7 +4911,8 @@ local function CensorName(name)
     if not name or type(name) ~= "string" or #name < 1 then return "N/A" end
     if #name <= 3 then return name end
     local prefix = name:sub(1, 3)
-    local censorString = string.rep("*", #name - 3)
+    local censureLength = #name - 3
+    local censorString = string.rep("*", censureLength)
     return prefix .. censorString
 end
 
@@ -4933,7 +4934,7 @@ local function GetFishNameAndRarity(item)
     if item.Metadata and item.Metadata.Rarity then
         rarity = item.Metadata.Rarity
     elseif itemData and itemData.Probability and itemData.Probability.Chance and TierUtility then
-        local tierObj
+        local tierObj = nil
         pcall(function() tierObj = TierUtility:GetTierFromRarity(itemData.Probability.Chance) end)
         if tierObj and tierObj.Name then rarity = tierObj.Name end
     end
@@ -5136,18 +5137,20 @@ local function onFishObtained(itemId, metadata, fullData)
     if not success then warn("[Noxius Webhook] Error:", results) end
 end
 
--- Koneksi event pakai Events.fishNotif (sudah diubah)
+-- Koneksi event dengan pengecekan anti-nil (ini satu-satunya tambahan)
 if Events.fishNotif then
     Events.fishNotif.OnClientEvent:Connect(function(itemId, metadata, fullData)
         pcall(function() onFishObtained(itemId, metadata, fullData) end)
     end)
+else
+    warn("[Webhook] Events.fishNotif NIL! Remote 'RE/ObtainedNewFishNotification' tidak ditemukan.")
 end
 
 -- ============================================================
--- 🖼️ UI COMPONENTS (di dalam Tab10 sebagai section baru)
+-- 🖼️ UI COMPONENTS (sama persis)
 -- ============================================================
 
-webhookSection:Input({
+webhooksec:Input({
     Title = "Discord Webhook URL",
     Desc = "URL tempat notifikasi akan dikirim.",
     Value = "",
@@ -5156,7 +5159,7 @@ webhookSection:Input({
     Callback = function(input) WEBHOOK_URL = input end
 })
 
-webhookSection:Toggle({
+webhooksec:Toggle({
     Title = "Enable Fish Notifications",
     Desc = "Aktifkan/nonaktifkan pengiriman notifikasi ikan.",
     Value = false,
@@ -5177,7 +5180,7 @@ webhookSection:Toggle({
     end
 })
 
-webhookSection:Dropdown({
+webhooksec:Dropdown({
     Title = "Filter by Specific Name",
     Desc = "Notifikasi khusus untuk nama ikan tertentu",
     Values = getWebhookItemOptions(),
@@ -5186,7 +5189,7 @@ webhookSection:Dropdown({
     Callback = function(names) SelectedWebhookItemNames = names or {} end
 })
 
-webhookSection:Dropdown({
+webhooksec:Dropdown({
     Title = "Rarity to Notify",
     Desc = "Hanya notifikasi ikan rarity yang dipilih.",
     Values = RarityList,
@@ -5198,13 +5201,13 @@ webhookSection:Dropdown({
     end
 })
 
-WebhookStatusParagraph = webhookSection:Paragraph({
+WebhookStatusParagraph = webhooksec:Paragraph({
     Title = "Webhook Status",
     Content = "Aktifkan 'Enable Fish Notifications' untuk mulai mendengarkan tangkapan ikan.",
     Icon = "info",
 })
 
-webhookSection:Button({
+webhooksec:Button({
     Title = "Test Webhook",
     Icon = "send",
     Callback = function()
