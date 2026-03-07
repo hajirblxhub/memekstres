@@ -4759,334 +4759,170 @@ end
 Tab9:Divider()
 
 -- Tab 10: Gift
--- =============================================
--- TAB 10: GIFT & TOTEM (FULL LENGKAP)
--- =============================================
 local Tab10 = Window:Tab({
     Title = "Gift & Totem",
     Icon = "gift"
 })
 
--- ====================
--- SECTION: LUCK BOOSTERS
--- ====================
 Tab10:Section({
     Title = "Luck Boosters",
     Icon = "sparkles"
 })
 
-local luckBoosters = {
-    "x2 Luck",
-    "x4 Luck",
-    "x8 Luck"
-}
-
-local selectedLuckBooster = luckBoosters[1]
+local luckBoosters = {"x2 Luck", "x4 Luck", "x8 Luck"}
+local selectedLuck = luckBoosters[1]
 
 Tab10:Dropdown({
     Title = "Pilih Luck Booster",
     Values = luckBoosters,
-    Default = selectedLuckBooster,
-    Multi = false,
-    Callback = function(value)
-        selectedLuckBooster = value
-        WindUI:Notify({
-            Title = "Luck Booster",
-            Content = "Dipilih: " .. value,
-            Duration = 2
-        })
-    end
+    Default = selectedLuck,
+    Callback = function(v) selectedLuck = v end
 })
 
 Tab10:Button({
-    Title = "Beli Luck Booster",
-    Icon = "gift",
+    Title = "Beli Booster",
     Callback = function()
-        local success, err = pcall(function()
-            GiftingController:Open(selectedLuckBooster)
-        end)
-        
-        if success then
-            WindUI:Notify({
-                Title = "Berhasil",
-                Content = "Membuka pembelian " .. selectedLuckBooster .. "...",
-                Duration = 3
-            })
-        else
-            WindUI:Notify({
-                Title = "Error",
-                Content = "Gagal: " .. tostring(err),
-                Duration = 5
-            })
-        end
+        pcall(function() GiftingController:Open(selectedLuck) end)
     end
 })
 
 Tab10:Divider()
 
--- ====================
--- SECTION: ROD SKINS
--- ====================
 Tab10:Section({
     Title = "Rod Skins",
     Icon = "wand"
 })
 
 local rodSkins = {
-    "Frozen Krampus Scythe",
-    "Gingerbread Katana",
-    "Christmas Parasol",
-    "Corruption Edge",
-    "Eclipse Katana",
-    "The Vanquisher",
-    "Black Hole Sword",
-    "Ban Hammer",
-    "Holy Trident",
-    "Soul Scythe",
-    "Aurelian Bow",
-    "Cupid's Harp"
+    "Frozen Krampus Scythe", "Gingerbread Katana", "Christmas Parasol",
+    "Corruption Edge", "Eclipse Katana", "The Vanquisher",
+    "Black Hole Sword", "Ban Hammer", "Holy Trident",
+    "Soul Scythe", "Aurelian Bow", "Cupid's Harp"
 }
-
-local selectedRodSkin = rodSkins[1]
+local selectedSkin = rodSkins[1]
 
 Tab10:Dropdown({
     Title = "Pilih Rod Skin",
     Values = rodSkins,
-    Default = selectedRodSkin,
-    Multi = false,
-    Callback = function(value)
-        selectedRodSkin = value
-        WindUI:Notify({
-            Title = "Rod Skin",
-            Content = "Dipilih: " .. value,
-            Duration = 2
-        })
-    end
+    Default = selectedSkin,
+    Callback = function(v) selectedSkin = v end
 })
 
 Tab10:Button({
-    Title = "Beli Rod Skin",
-    Icon = "gift",
+    Title = "Beli Skin",
     Callback = function()
-        local success, err = pcall(function()
-            GiftingController:Open(selectedRodSkin)
-        end)
-        
-        if success then
-            WindUI:Notify({
-                Title = "Berhasil",
-                Content = "Membuka pembelian " .. selectedRodSkin .. "...",
-                Duration = 3
-            })
-        else
-            WindUI:Notify({
-                Title = "Error",
-                Content = "Gagal: " .. tostring(err),
-                Duration = 5
-            })
-        end
+        pcall(function() GiftingController:Open(selectedSkin) end)
     end
 })
 
 Tab10:Divider()
 
--- ====================
--- SECTION: AUTO 3 TOTEM MIX (BYPASS)
--- ====================
 Tab10:Section({
     Title = "Auto 3 Totem Mix (Bypass)",
     Icon = "layers"
 })
 
-local AUTO_3_TOTEM_ACTIVE = false
-local AUTO_3_TOTEM_THREAD = nil
+local auto3Totem = false
+local auto3Thread = nil
 
-local TOTEM_MIX_CONFIG = {
-    { name = "Shiny Totem",   id = 3 },
-    { name = "Luck Totem",    id = 1 },
-    { name = "Mutation Totem", id = 2 }
+local totemOrder = {
+    {name = "Shiny", id = 3},
+    {name = "Luck", id = 1},
+    {name = "Mutation", id = 2}
 }
 
-local REF_CENTER = Vector3.new(93.932, 9.532, 2684.134)
-local REF_SPOTS = {
-    Vector3.new(45.0468979,  13.5, 2730.19067),   -- Shiny
-    Vector3.new(145.644608,  13.5, 2721.90747),   -- Luck
-    Vector3.new(84.6406631,  14.2, 2636.05786),   -- Mutation
+local center = Vector3.new(93.932, 9.532, 2684.134)
+local spots = {
+    Vector3.new(45.0469, 13.5, 2730.19067),
+    Vector3.new(145.6446, 13.5, 2721.90747),
+    Vector3.new(84.6407, 14.2, 2636.05786)
 }
 
-local function GetMixTotemUUID(targetId)
-    local uuid = nil
+local function getTotemUUID(id)
+    local uuid
     pcall(function()
-        local inv = PlayerData:GetExpect("Inventory")
-        if inv and inv.Totems then
-            for _, item in ipairs(inv.Totems) do
-                if item.Id == targetId then
-                    uuid = item.UUID
-                    return
-                end
-            end
+        local totems = PlayerData:GetExpect("Inventory").Totems
+        for _, t in totems or {} do
+            if t.Id == id then uuid = t.UUID; break end
         end
     end)
     return uuid
 end
 
-local function TweenTo(targetCFrame, duration)
-    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+local function tween(hrp, cf, dur)
     if not hrp then return false end
-    
-    local tweenService = game:GetService("TweenService")
-    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
-    
     hrp.Anchored = true
-    local tween = tweenService:Create(hrp, tweenInfo, {CFrame = targetCFrame})
-    tween:Play()
-    tween.Completed:Wait()
-    
-    task.wait(0.15)
+    local ts = game.TweenService:Create(hrp, TweenInfo.new(dur, 0, 1), {CFrame = cf})
+    ts:Play()
+    ts.Completed:Wait()
+    task.wait(0.1)
     return true
 end
 
-local function RunMixTotemLoop()
-    if AUTO_3_TOTEM_THREAD then task.cancel(AUTO_3_TOTEM_THREAD) end
-    
-    AUTO_3_TOTEM_THREAD = task.spawn(function()
-        while AUTO_3_TOTEM_ACTIVE do
+local function runAuto3()
+    if auto3Thread then task.cancel(auto3Thread) end
+    auto3Thread = task.spawn(function()
+        while auto3Totem do
             local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if not hrp then 
-                task.wait(6) 
-                continue 
-            end
+            if not hrp then task.wait(5) continue end
 
-            local startCFrame = hrp.CFrame
-            WindUI:Notify({
-                Title = "Mix Totem",
-                Content = "Memulai ritual 3 totem mix...",
-                Duration = 3.5
-            })
+            local startCF = hrp.CFrame
+            WindUI:Notify({Title = "Auto 3 Totem", Content = "Mulai ritual..."})
 
-            local platforms = {}
+            for i, t in totemOrder do
+                if not auto3Totem then break end
 
-            for i, totem in ipairs(TOTEM_MIX_CONFIG) do
-                if not AUTO_3_TOTEM_ACTIVE then break end
+                local pos = startCF.Position + (spots[i] - center)
+                local targetCF = CFrame.new(pos)
 
-                local offset = REF_SPOTS[i] - REF_CENTER
-                local targetPos = startCFrame.Position + offset
-                local targetCFrame = CFrame.new(targetPos) * CFrame.Angles(0, math.rad(180), 0)
+                if not tween(hrp, targetCF, 1.8) then continue end
 
-                if not TweenTo(targetCFrame, 1.8) then continue end
-
-                local p = Instance.new("Part")
-                p.Name = "TempTotemPlatform"
-                p.Size = Vector3.new(10, 1, 10)
-                p.CFrame = targetCFrame * CFrame.new(0, -3.2, 0)
-                p.Anchored = true
-                p.CanCollide = true
-                p.Transparency = 0.7
-                p.BrickColor = BrickColor.new("Really red")
-                p.Material = Enum.Material.Neon
-                p.Parent = workspace
-                table.insert(platforms, p)
+                local plat = Instance.new("Part")
+                plat.Size = Vector3.new(10,1,10)
+                plat.CFrame = targetCF * CFrame.new(0,-3.2,0)
+                plat.Anchored = true
+                plat.CanCollide = true
+                plat.Transparency = 0.8
+                plat.Parent = workspace
 
                 hrp.Anchored = false
-                task.wait(0.9)
+                task.wait(0.8)
 
-                local uuid = GetMixTotemUUID(totem.id)
+                local uuid = getTotemUUID(t.id)
                 if uuid and Events.SpawnTotem then
                     Events.SpawnTotem:FireServer(uuid)
-                    
                     task.spawn(function()
-                        task.wait(0.4)
-                        for _ = 1, 6 do
-                            pcall(function() 
-                                if Events.equip then Events.equip:FireServer(1) end
-                            end)
-                            task.wait(0.25)
+                        task.wait(0.5)
+                        for _=1,5 do
+                            pcall(function() Events.equip:FireServer(1) end)
+                            task.wait(0.3)
                         end
                     end)
-
-                    WindUI:Notify({
-                        Title = totem.name,
-                        Content = "Spawn berhasil!",
-                        Duration = 2.2
-                    })
-                else
-                    WindUI:Notify({
-                        Title = "Gagal",
-                        Content = totem.name .. " tidak ditemukan di inv",
-                        Duration = 3
-                    })
+                    WindUI:Notify({Title = t.name, Content = "Spawn OK"})
                 end
 
-                task.wait(3.5)
+                task.wait(3)
+                plat:Destroy()
             end
 
-            -- Bersihkan platform
-            for _, p in ipairs(platforms) do
-                pcall(function() p:Destroy() end)
-            end
+            tween(hrp, startCF, 1.8)
+            hrp.Anchored = false
+            WindUI:Notify({Title = "Selesai", Content = "Cooldown 60 menit"})
 
-            if AUTO_3_TOTEM_ACTIVE then
-                TweenTo(startCFrame, 1.8)
-                hrp.Anchored = false
-                
-                WindUI:Notify({
-                    Title = "Ritual Selesai",
-                    Content = "Cooldown 1 jam dimulai...",
-                    Duration = 5
-                })
-
-                for remaining = 3600, 1, -60 do
-                    if not AUTO_3_TOTEM_ACTIVE then break end
-                    task.wait(60)
-                end
-            end
+            task.wait(3600)  -- 1 jam
         end
     end)
 end
 
 Tab10:Toggle({
-    Title = "Auto Spawn 3 Totem Mix",
-    Description = "Urutan: Shiny → Luck → Mutation\n(Tween + Platform Bypass)",
-    Default = false,
-    Callback = function(value)
-        AUTO_3_TOTEM_ACTIVE = value
-        
-        if value then
-            -- Cek minimal punya 1 totem
-            local hasAny = false
-            for _, t in ipairs(TOTEM_MIX_CONFIG) do
-                if GetMixTotemUUID(t.id) then hasAny = true break end
-            end
-            
-            if not hasAny then
-                WindUI:Notify({
-                    Title = "Peringatan",
-                    Content = "Tidak ada Shiny/Luck/Mutation di inventory!",
-                    Duration = 5
-                })
-                AUTO_3_TOTEM_ACTIVE = false
-                return
-            end
-            
-            RunMixTotemLoop()
-            WindUI:Notify({
-                Title = "Auto 3 Totem",
-                Content = "Aktif - mulai ritual sekarang",
-                Duration = 4
-            })
-        else
-            if AUTO_3_TOTEM_THREAD then
-                task.cancel(AUTO_3_TOTEM_THREAD)
-                AUTO_3_TOTEM_THREAD = nil
-            end
+    Title = "Auto 3 Totem (Shiny-Luck-Mut)",
+    Description = "Bypass posisi + tween",
+    Callback = function(v)
+        auto3Totem = v
+        if v then runAuto3() else
+            if auto3Thread then task.cancel(auto3Thread) end
             local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             if hrp then hrp.Anchored = false end
-            
-            WindUI:Notify({
-                Title = "Auto 3 Totem",
-                Content = "Dimatikan",
-                Duration = 2.5
-            })
         end
     end
 })
